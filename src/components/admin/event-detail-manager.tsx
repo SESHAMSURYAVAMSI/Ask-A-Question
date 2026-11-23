@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   Building2,
   CalendarDays,
+  Check,
   CheckCircle2,
   ChevronRight,
   CircleHelp,
@@ -20,12 +21,14 @@ import {
   Link2,
   MapPin,
   Mic2,
+  Pencil,
   Plus,
   Radio,
   Sparkles,
   Star,
   Trash2,
   User,
+  X,
 } from "lucide-react";
 
 export interface EventDetailData {
@@ -166,7 +169,6 @@ export default function EventDetailManager({
   const [questions, setQuestions] =
     useState<QuestionItemData[]>(initialQuestions);
 
-  // Sync only if initialSessions changes from server navigation
   useEffect(() => {
     setSessions(
       initialSessions.map((s) => ({
@@ -193,6 +195,17 @@ export default function EventDetailManager({
   const [endTime, setEndTime] = useState("10:00 AM");
   const [description, setDescription] = useState("");
   const [creatingSession, setCreatingSession] = useState(false);
+
+  // Edit session inline state
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editSessionDate, setEditSessionDate] = useState("");
+  const [editHall, setEditHall] = useState("");
+  const [editSpeaker, setEditSpeaker] = useState("");
+  const [editStartTime, setEditStartTime] = useState("");
+  const [editEndTime, setEditEndTime] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // Right-side Day -> Hall -> Session drill-down state
   const [activeDayDate, setActiveDayDate] = useState<string>(defaultFormDate);
@@ -258,7 +271,9 @@ export default function EventDetailManager({
       const parentSession = sessionMap.get(q.sessionId);
       const dayMatch =
         questionDayFilter === "all" ||
-        (parentSession ? toYMD(parentSession.sessionDate) === questionDayFilter : false);
+        (parentSession
+          ? toYMD(parentSession.sessionDate) === questionDayFilter
+          : false);
       const hallMatch = selectedHall === "all" || q.hall === selectedHall;
       const sessionMatch =
         selectedSessionId === "all" || q.sessionId === selectedSessionId;
@@ -337,6 +352,75 @@ export default function EventDetailManager({
     }
   }
 
+  function startEditingSession(sessionItem: SessionItemData) {
+    setError("");
+    setEditingSessionId(sessionItem.id);
+    setEditTitle(sessionItem.title);
+    setEditSessionDate(toYMD(sessionItem.sessionDate));
+    setEditHall(sessionItem.hall);
+    setEditSpeaker(sessionItem.speaker);
+    setEditStartTime(sessionItem.startTime);
+    setEditEndTime(sessionItem.endTime);
+    setEditDescription(sessionItem.description);
+  }
+
+  function cancelEditingSession() {
+    setEditingSessionId(null);
+  }
+
+  async function handleSaveSessionEdit(sessionId: string) {
+    setError("");
+    setSavingEdit(true);
+
+    const normalizedDate = toYMD(editSessionDate);
+
+    try {
+      const res = await fetch(`/api/admin/sessions/${sessionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: editTitle,
+          sessionDate: normalizedDate,
+          hall: editHall,
+          speaker: editSpeaker,
+          startTime: editStartTime,
+          endTime: editEndTime,
+          description: editDescription,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.message || "Failed to update session details.");
+        return;
+      }
+
+      const updated: SessionItemData = {
+        ...data.session,
+        sessionDate: toYMD(data.session.sessionDate || normalizedDate),
+      };
+
+      setSessions((prev) =>
+        prev.map((s) => (s.id === sessionId ? updated : s))
+      );
+
+      // Update hall name on any existing questions for this session in local state
+      setQuestions((prev) =>
+        prev.map((q) =>
+          q.sessionId === sessionId ? { ...q, hall: updated.hall } : q
+        )
+      );
+
+      setActiveDayDate(updated.sessionDate);
+      setActiveHallName(updated.hall);
+      setEditingSessionId(null);
+    } catch {
+      setError("Network error while saving session changes.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
   async function handleToggleSessionActive(sessionItem: SessionItemData) {
     setError("");
     try {
@@ -383,6 +467,9 @@ export default function EventDetailManager({
       );
       if (selectedSessionId === sessionItem.id) {
         setSelectedSessionId("all");
+      }
+      if (editingSessionId === sessionItem.id) {
+        setEditingSessionId(null);
       }
     } catch {
       setError("Network error while deleting session.");
@@ -745,8 +832,8 @@ export default function EventDetailManager({
                 Schedule by Day &amp; Hall ({sessions.length} Total)
               </h3>
               <p className="text-xs text-stone-500">
-                Select a Day, then click a Hall to view its sessions &amp; Q&amp;A
-                links.
+                Select a Day, then click a Hall to view, edit, or export its
+                sessions.
               </p>
             </div>
           </div>
@@ -780,7 +867,9 @@ export default function EventDetailManager({
                     >
                       <CalendarDays
                         size={15}
-                        className={isSelected ? "text-orange-100" : "text-orange-600"}
+                        className={
+                          isSelected ? "text-orange-100" : "text-orange-600"
+                        }
                       />
                       <div>
                         <div className="flex items-center gap-1.5">
@@ -820,11 +909,13 @@ export default function EventDetailManager({
               </div>
               <h4 className="mt-4 text-base font-extrabold text-[#241000]">
                 No sessions scheduled for{" "}
-                {activeDayObj ? `${activeDayObj.dayLabel} (${activeDayObj.formattedDate})` : "this date"}
+                {activeDayObj
+                  ? `${activeDayObj.dayLabel} (${activeDayObj.formattedDate})`
+                  : "this date"}
               </h4>
               <p className="mt-1 max-w-sm text-xs leading-5 text-stone-500">
-                Use the form on the left to add sessions for Hall A, Hall B, etc.
-                on this day.
+                Use the form on the left to add sessions for Hall A, Hall B,
+                etc. on this day.
               </p>
             </div>
           ) : (
@@ -854,7 +945,9 @@ export default function EventDetailManager({
                         <Building2
                           size={14}
                           className={
-                            isHallSelected ? "text-orange-300" : "text-orange-600"
+                            isHallSelected
+                              ? "text-orange-300"
+                              : "text-orange-600"
                           }
                         />
                         <span>{hallName}</span>
@@ -878,13 +971,182 @@ export default function EventDetailManager({
               {/* Step 3: Sessions inside the selected Day & Hall */}
               <div>
                 <p className="mb-2.5 text-[11px] font-bold uppercase tracking-wider text-stone-400">
-                  3. Sessions in {effectiveActiveHall} ({sessionsForActiveDayAndHall.length})
+                  3. Sessions in {effectiveActiveHall} (
+                  {sessionsForActiveDayAndHall.length})
                 </p>
 
                 <div className="space-y-3.5">
                   {sessionsForActiveDayAndHall.map((sessionItem) => {
                     const qCount =
                       questionCountBySession.get(sessionItem.id) ?? 0;
+                    const isEditing = editingSessionId === sessionItem.id;
+
+                    if (isEditing) {
+                      return (
+                        <div
+                          key={sessionItem.id}
+                          className="rounded-2xl border-2 border-orange-400 bg-orange-50/40 p-5 shadow-sm"
+                        >
+                          <div className="mb-4 flex items-center justify-between">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wide text-orange-700">
+                              <Pencil size={13} />
+                              Edit Session Details
+                            </span>
+                            <button
+                              type="button"
+                              onClick={cancelEditingSession}
+                              className="rounded-lg p-1 text-stone-400 hover:bg-white hover:text-stone-700"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+
+                          <div className="space-y-3">
+                            <div>
+                              <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
+                                Session Title *
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                value={editTitle}
+                                onChange={(e) => setEditTitle(e.target.value)}
+                                className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-sm font-semibold text-[#241000] outline-none focus:border-orange-500"
+                              />
+                            </div>
+
+                            <div className="grid gap-3 sm:grid-cols-3">
+                              <div>
+                                <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
+                                  Day / Date *
+                                </label>
+                                {eventDays.length > 0 ? (
+                                  <select
+                                    value={editSessionDate}
+                                    onChange={(e) =>
+                                      setEditSessionDate(e.target.value)
+                                    }
+                                    className="h-10 w-full rounded-xl border border-stone-200 bg-white px-2.5 text-xs font-bold text-[#241000] outline-none focus:border-orange-500"
+                                  >
+                                    {eventDays.map((d) => (
+                                      <option key={d.dateStr} value={d.dateStr}>
+                                        {d.dayLabel} — {d.formattedDate}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <input
+                                    type="date"
+                                    value={editSessionDate}
+                                    onChange={(e) =>
+                                      setEditSessionDate(e.target.value)
+                                    }
+                                    className="h-10 w-full rounded-xl border border-stone-200 bg-white px-2.5 text-xs text-[#241000] outline-none focus:border-orange-500"
+                                  />
+                                )}
+                              </div>
+
+                              <div>
+                                <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
+                                  Hall / Room *
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  list="existing-halls-list"
+                                  value={editHall}
+                                  onChange={(e) => setEditHall(e.target.value)}
+                                  className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs font-bold text-[#241000] outline-none focus:border-orange-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
+                                  Speaker
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editSpeaker}
+                                  onChange={(e) =>
+                                    setEditSpeaker(e.target.value)
+                                  }
+                                  placeholder="Optional"
+                                  className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs text-[#241000] outline-none focus:border-orange-500"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <div>
+                                <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
+                                  Start Time *
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  value={editStartTime}
+                                  onChange={(e) =>
+                                    setEditStartTime(e.target.value)
+                                  }
+                                  className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs text-[#241000] outline-none focus:border-orange-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
+                                  End Time *
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  value={editEndTime}
+                                  onChange={(e) =>
+                                    setEditEndTime(e.target.value)
+                                  }
+                                  className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs text-[#241000] outline-none focus:border-orange-500"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
+                                Topic Notes
+                              </label>
+                              <textarea
+                                rows={2}
+                                value={editDescription}
+                                onChange={(e) =>
+                                  setEditDescription(e.target.value)
+                                }
+                                className="w-full rounded-xl border border-stone-200 bg-white p-2.5 text-xs text-[#241000] outline-none focus:border-orange-500"
+                              />
+                            </div>
+
+                            <div className="flex items-center justify-end gap-2 pt-2">
+                              <button
+                                type="button"
+                                onClick={cancelEditingSession}
+                                disabled={savingEdit}
+                                className="rounded-xl border border-stone-200 bg-white px-4 py-2 text-xs font-bold text-stone-600 hover:bg-stone-50"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                disabled={savingEdit}
+                                onClick={() =>
+                                  handleSaveSessionEdit(sessionItem.id)
+                                }
+                                className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-orange-700 disabled:opacity-60"
+                              >
+                                <Check size={14} />
+                                {savingEdit ? "Saving..." : "Save Changes"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
 
                     return (
                       <div
@@ -925,9 +1187,25 @@ export default function EventDetailManager({
                                 {sessionItem.speaker}
                               </p>
                             )}
+
+                            {sessionItem.description && (
+                              <p className="mt-1.5 text-xs leading-5 text-stone-500">
+                                {sessionItem.description}
+                              </p>
+                            )}
                           </div>
 
                           <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => startEditingSession(sessionItem)}
+                              title="Edit Session Details"
+                              className="inline-flex items-center gap-1 rounded-xl border border-orange-200 bg-white px-3 py-1.5 text-xs font-bold text-orange-700 transition hover:bg-orange-50"
+                            >
+                              <Pencil size={12} />
+                              Edit
+                            </button>
+
                             <button
                               type="button"
                               onClick={() =>
@@ -1004,7 +1282,7 @@ export default function EventDetailManager({
                               className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm shadow-orange-600/20 transition hover:bg-orange-700"
                             >
                               <Download size={13} />
-                              Download Excel (.xls)
+                              Download Excel
                             </a>
                           </div>
                         </div>
@@ -1097,7 +1375,7 @@ export default function EventDetailManager({
                 className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-orange-600 px-4 text-xs font-bold text-white shadow-sm shadow-orange-600/20 transition hover:bg-orange-700"
               >
                 <Download size={14} />
-                Download Excel (.xls)
+                Download Excel
               </a>
             )}
           </div>

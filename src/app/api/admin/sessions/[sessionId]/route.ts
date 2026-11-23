@@ -32,12 +32,26 @@ export async function PATCH(request: Request, context: RouteContext) {
       updates.isActive = body.isActive;
     }
 
-    if (typeof body.title === "string" && body.title.trim()) {
-      updates.title = body.title.trim();
+    if (typeof body.title === "string") {
+      const trimmed = body.title.trim();
+      if (!trimmed) {
+        return NextResponse.json(
+          { message: "Session title cannot be empty." },
+          { status: 400 }
+        );
+      }
+      updates.title = trimmed;
     }
 
-    if (typeof body.hall === "string" && body.hall.trim()) {
-      updates.hall = body.hall.trim();
+    if (typeof body.hall === "string") {
+      const trimmed = body.hall.trim();
+      if (!trimmed) {
+        return NextResponse.json(
+          { message: "Hall name cannot be empty." },
+          { status: 400 }
+        );
+      }
+      updates.hall = trimmed;
     }
 
     if (typeof body.speaker === "string") {
@@ -56,6 +70,10 @@ export async function PATCH(request: Request, context: RouteContext) {
       updates.endTime = body.endTime.trim();
     }
 
+    if (typeof body.description === "string") {
+      updates.description = body.description.trim();
+    }
+
     await connectDB();
 
     const updated = await Session.findByIdAndUpdate(
@@ -71,6 +89,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       );
     }
 
+    // Keep hall name in sync across all questions belonging to this session
     if (typeof updates.hall === "string") {
       await Question.updateMany(
         { sessionId },
