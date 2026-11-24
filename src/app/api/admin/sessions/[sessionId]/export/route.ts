@@ -13,6 +13,18 @@ interface RouteContext {
   params: Promise<{ sessionId: string }>;
 }
 
+function formatIndianTime(dateValue: Date | string): string {
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date(dateValue));
+}
+
 export async function GET(_request: Request, context: RouteContext) {
   try {
     const admin = await getAdminSession();
@@ -71,7 +83,7 @@ export async function GET(_request: Request, context: RouteContext) {
         "Time Slot",
         "Asked By",
         "Question",
-        "Submitted At",
+        "Submitted At (IST)",
       ],
       ...questions.map((q, index) => [
         index + 1,
@@ -81,10 +93,7 @@ export async function GET(_request: Request, context: RouteContext) {
         timeSlot,
         q.participantName || "Anonymous",
         q.questionText,
-        new Intl.DateTimeFormat("en-IN", {
-          dateStyle: "medium",
-          timeStyle: "short",
-        }).format(new Date(q.createdAt)),
+        formatIndianTime(q.createdAt),
       ]),
     ];
 
@@ -98,7 +107,7 @@ export async function GET(_request: Request, context: RouteContext) {
       { wch: 20 }, // Time Slot
       { wch: 18 }, // Asked By
       { wch: 52 }, // Question
-      { wch: 22 }, // Submitted At
+      { wch: 24 }, // Submitted At (IST)
     ];
 
     const workbook = XLSX.utils.book_new();
