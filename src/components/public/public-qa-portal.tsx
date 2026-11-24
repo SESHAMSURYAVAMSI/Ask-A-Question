@@ -302,7 +302,7 @@ export default function PublicQaPortal({ session }: PublicQaPortalProps) {
                         htmlFor="participantName"
                         className="mb-2 block text-xs font-bold uppercase tracking-wide text-stone-600"
                       >
-                        Your Name (Optional)
+                        Your Name 
                       </label>
                       <div className="relative">
                         <User
