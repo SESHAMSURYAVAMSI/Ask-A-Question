@@ -55,13 +55,11 @@ export default function LiveScreenDisplay({
 }: LiveScreenDisplayProps) {
   const [questions, setQuestions] =
     useState<DisplayQuestionItem[]>(initialQuestions);
-  const [filter, setFilter] = useState<"all" | "featured" | "unanswered">("all");
   const [clearedAfterMs, setClearedAfterMs] = useState<number | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const storageKey = `display_cleared_after_${session.id}`;
 
-  // Restore any active screen-clear cutoff for this session
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(storageKey);
@@ -107,16 +105,6 @@ export default function LiveScreenDisplay({
     );
   }, [questions, clearedAfterMs]);
 
-  const visibleQuestions = useMemo(() => {
-    if (filter === "featured") {
-      return activeScreenQuestions.filter((q) => q.isFeatured);
-    }
-    if (filter === "unanswered") {
-      return activeScreenQuestions.filter((q) => !q.isAnswered);
-    }
-    return activeScreenQuestions;
-  }, [activeScreenQuestions, filter]);
-
   function handleHardRefresh() {
     const now = Date.now();
     setClearedAfterMs(now);
@@ -149,11 +137,12 @@ export default function LiveScreenDisplay({
 
   return (
     <main className="min-h-screen bg-[#fffaf5] text-[#241000]">
-      {/* Clean Light Presentation Header */}
+      {/* Clean Balanced Presentation Header */}
       <header className="sticky top-0 z-30 border-b border-orange-100 bg-white/95 shadow-sm shadow-orange-950/[0.03] backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl flex-col justify-between gap-5 px-6 py-5 sm:px-10 lg:flex-row lg:items-center">
-          <div>
-            <div className="flex flex-wrap items-center gap-2.5">
+        <div className="mx-auto max-w-7xl px-6 py-5 sm:px-10">
+          {/* Row 1: Session Badges (Left) + All Count & Stage Action Buttons (Right) */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-[#241000] px-3.5 py-1 text-xs font-extrabold uppercase tracking-wider text-orange-200">
                 <Building2 size={13} className="text-orange-400" />
                 {session.hall}
@@ -173,77 +162,55 @@ export default function LiveScreenDisplay({
               </span>
             </div>
 
-            <p className="mt-2.5 text-xs font-bold uppercase tracking-[0.15em] text-orange-600">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center rounded-xl bg-[#241000] px-3.5 py-2 text-xs font-bold text-white shadow-sm">
+                All ({activeScreenQuestions.length})
+              </span>
+
+              <button
+                type="button"
+                onClick={handleHardRefresh}
+                title="Clear current questions from screen (keeps all data in DB) and show only new submissions"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2 text-xs font-bold text-amber-900 transition hover:bg-amber-100"
+              >
+                <RotateCcw size={14} />
+                Hard Refresh
+              </button>
+
+              <button
+                type="button"
+                onClick={handleFullscreen}
+                title="Toggle Fullscreen"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3.5 py-2 text-xs font-bold text-stone-700 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+              >
+                <Maximize2 size={14} />
+                Fullscreen
+              </button>
+
+              <Link
+                href={`/ask/${session.id}`}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-4 py-2 text-xs font-bold text-white shadow-sm shadow-orange-600/20 transition hover:bg-orange-700"
+              >
+                <MessageCircle size={14} />
+                Ask Question
+              </Link>
+            </div>
+          </div>
+
+          {/* Row 2: Event & Session Title + Speaker */}
+          <div className="mt-4 border-t border-orange-100/70 pt-4">
+            <p className="text-xs font-bold uppercase tracking-[0.15em] text-orange-600">
               {session.eventTitle}
             </p>
-            <h1 className="mt-0.5 text-2xl font-black tracking-tight text-[#241000] sm:text-3xl">
+            <h1 className="mt-1 text-xl font-black leading-snug tracking-tight text-[#241000] sm:text-3xl">
               {session.title}
             </h1>
             {session.speaker && (
-              <p className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-stone-600">
+              <p className="mt-1.5 inline-flex items-center gap-1.5 text-sm font-medium text-stone-600">
                 <Mic2 size={14} className="text-orange-600" />
                 {session.speaker}
               </p>
             )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="flex rounded-xl border border-stone-200 bg-stone-100/80 p-1">
-              {(
-                [
-                  { key: "all", label: `All (${activeScreenQuestions.length})` },
-                  {
-                    key: "featured",
-                    label: `Featured (${activeScreenQuestions.filter((q) => q.isFeatured).length})`,
-                  },
-                  {
-                    key: "unanswered",
-                    label: `Pending (${activeScreenQuestions.filter((q) => !q.isAnswered).length})`,
-                  },
-                ] as const
-              ).map((tab) => (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => setFilter(tab.key)}
-                  className={`rounded-lg px-3.5 py-2 text-xs font-bold transition ${
-                    filter === tab.key
-                      ? "bg-[#241000] text-white shadow-sm"
-                      : "text-stone-600 hover:text-[#241000]"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              onClick={handleHardRefresh}
-              title="Clear current questions from screen (keeps all data in DB) and show only new submissions"
-              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-xs font-bold text-amber-900 transition hover:bg-amber-100"
-            >
-              <RotateCcw size={14} />
-              Hard Refresh
-            </button>
-
-            <button
-              type="button"
-              onClick={handleFullscreen}
-              title="Toggle Fullscreen"
-              className="inline-flex items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3.5 py-2.5 text-xs font-bold text-stone-700 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
-            >
-              <Maximize2 size={14} />
-              Fullscreen
-            </button>
-
-            <Link
-              href={`/ask/${session.id}`}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-orange-600/20 transition hover:bg-orange-700"
-            >
-              <MessageCircle size={14} />
-              Ask Question
-            </Link>
           </div>
         </div>
       </header>
@@ -272,7 +239,7 @@ export default function LiveScreenDisplay({
           </div>
         )}
 
-        {visibleQuestions.length === 0 ? (
+        {activeScreenQuestions.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-orange-200 bg-white px-6 py-24 text-center shadow-sm">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-orange-50 text-orange-600">
               <MessageCircle size={32} />
@@ -297,7 +264,7 @@ export default function LiveScreenDisplay({
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2">
-            {visibleQuestions.map((q, idx) => (
+            {activeScreenQuestions.map((q, idx) => (
               <motion.article
                 key={q.id}
                 layout
