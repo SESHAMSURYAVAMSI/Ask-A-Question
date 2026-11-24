@@ -6,17 +6,19 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   ArrowUpRight,
-  CalendarDays,
+  Check,
   CircleHelp,
   Clock,
   FileEdit,
   Layers,
   MapPin,
+  Pencil,
   Plus,
   Radio,
   Search,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 
 export interface ManagedEventItem {
@@ -36,7 +38,16 @@ interface EventsManagerProps {
   initialEvents: ManagedEventItem[];
 }
 
-function formatDateRange(startDate: string | null, endDate: string | null, fallback: string) {
+function toYMD(isoString: string | null): string {
+  if (!isoString) return "";
+  return new Date(isoString).toISOString().slice(0, 10);
+}
+
+function formatDateRange(
+  startDate: string | null,
+  endDate: string | null,
+  fallback: string
+) {
   const fmt = new Intl.DateTimeFormat("en-IN", {
     day: "numeric",
     month: "short",
@@ -64,6 +75,15 @@ export default function EventsManager({ initialEvents }: EventsManagerProps) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
+  // Inline Edit State
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editVenue, setEditVenue] = useState("");
+  const [editStartDate, setEditStartDate] = useState("");
+  const [editEndDate, setEditEndDate] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
   const filteredEvents = useMemo(() => {
     return events.filter((event) => {
       const matchesStatus = filter === "all" || event.status === filter;
@@ -84,6 +104,81 @@ export default function EventsManager({ initialEvents }: EventsManagerProps) {
       draft: events.filter((e) => e.status === "draft").length,
     };
   }, [events]);
+
+  function startEditing(eventItem: ManagedEventItem) {
+    setError("");
+    setEditingId(eventItem.id);
+    setEditTitle(eventItem.title);
+    setEditVenue(eventItem.venue);
+    setEditStartDate(toYMD(eventItem.startDate));
+    setEditEndDate(toYMD(eventItem.endDate));
+    setEditDescription(eventItem.description);
+  }
+
+  function cancelEditing() {
+    setEditingId(null);
+  }
+
+  async function handleSaveEdit(eventId: string) {
+    setError("");
+    const trimmedTitle = editTitle.trim();
+
+    if (!trimmedTitle) {
+      setError("Event title is required.");
+      return;
+    }
+
+    if (editStartDate && editEndDate && editEndDate < editStartDate) {
+      setError("End date cannot be earlier than start date.");
+      return;
+    }
+
+    setSavingEdit(true);
+
+    try {
+      const response = await fetch(`/api/admin/events/${eventId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: trimmedTitle,
+          venue: editVenue.trim(),
+          startDate: editStartDate || null,
+          endDate: editEndDate || null,
+          description: editDescription.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.message || "Unable to update event details.");
+        return;
+      }
+
+      setEvents((prev) =>
+        prev.map((item) =>
+          item.id === eventId
+            ? {
+                ...item,
+                title: data.event.title,
+                venue: data.event.venue,
+                description: data.event.description,
+                startDate: data.event.startDate,
+                endDate: data.event.endDate,
+              }
+            : item
+        )
+      );
+      setEditingId(null);
+      router.refresh();
+    } catch {
+      setError("Network error while updating event.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
 
   async function handleToggleStatus(eventItem: ManagedEventItem) {
     const nextStatus = eventItem.status === "live" ? "draft" : "live";
@@ -142,6 +237,9 @@ export default function EventsManager({ initialEvents }: EventsManagerProps) {
       }
 
       setEvents((prev) => prev.filter((item) => item.id !== eventItem.id));
+      if (editingId === eventItem.id) {
+        setEditingId(null);
+      }
       router.refresh();
     } catch {
       setError("Network error while deleting event.");
@@ -158,8 +256,8 @@ export default function EventsManager({ initialEvents }: EventsManagerProps) {
             Manage Events
           </h2>
           <p className="mt-1 text-sm text-stone-500">
-            Control Draft and Live visibility, inspect halls &amp; sessions, or
-            create a new event.
+            Control Draft and Live visibility, edit event details, inspect halls
+            &amp; sessions, or create a new event.
           </p>
         </div>
 
@@ -247,6 +345,118 @@ export default function EventsManager({ initialEvents }: EventsManagerProps) {
           {filteredEvents.map((eventItem, index) => {
             const isBusy = busyId === eventItem.id;
             const isLive = eventItem.status === "live";
+            const isEditing = editingId === eventItem.id;
+
+            if (isEditing) {
+              return (
+                <div
+                  key={eventItem.id}
+                  className="rounded-3xl border-2 border-orange-400 bg-white p-6 shadow-md"
+                >
+                  <div className="mb-4 flex items-center justify-between border-b border-orange-100 pb-3">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wide text-orange-700">
+                      <Pencil size={13} />
+                      Edit Event
+                    </span>
+                    <button
+                      type="button"
+                      onClick={cancelEditing}
+                      className="rounded-lg p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+
+                  <div className="space-y-3.5">
+                    <div>
+                      <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
+                        Event Title *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        className="h-10 w-full rounded-xl border border-stone-200 bg-stone-50 px-3 text-sm font-semibold text-[#241000] outline-none focus:border-orange-500 focus:bg-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
+                        Venue / Location
+                      </label>
+                      <input
+                        type="text"
+                        value={editVenue}
+                        onChange={(e) => setEditVenue(e.target.value)}
+                        placeholder="e.g. HICC Convention Center, Hyderabad"
+                        className="h-10 w-full rounded-xl border border-stone-200 bg-stone-50 px-3 text-xs text-[#241000] outline-none focus:border-orange-500 focus:bg-white"
+                      />
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
+                          Start Date
+                        </label>
+                        <input
+                          type="date"
+                          value={editStartDate}
+                          onChange={(e) => setEditStartDate(e.target.value)}
+                          className="h-10 w-full rounded-xl border border-stone-200 bg-stone-50 px-3 text-xs text-[#241000] outline-none focus:border-orange-500 focus:bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
+                          End Date
+                        </label>
+                        <input
+                          type="date"
+                          value={editEndDate}
+                          min={editStartDate || undefined}
+                          onChange={(e) => setEditEndDate(e.target.value)}
+                          className="h-10 w-full rounded-xl border border-stone-200 bg-stone-50 px-3 text-xs text-[#241000] outline-none focus:border-orange-500 focus:bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
+                        Description
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={editDescription}
+                        onChange={(e) => setEditDescription(e.target.value)}
+                        className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2.5 text-xs text-[#241000] outline-none focus:border-orange-500 focus:bg-white"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-2">
+                      <button
+                        type="button"
+                        disabled={savingEdit}
+                        onClick={cancelEditing}
+                        className="rounded-xl border border-stone-200 bg-white px-4 py-2 text-xs font-bold text-stone-600 hover:bg-stone-50"
+                      >
+                        Cancel
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={savingEdit}
+                        onClick={() => handleSaveEdit(eventItem.id)}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-orange-700 disabled:opacity-60"
+                      >
+                        <Check size={14} />
+                        {savingEdit ? "Saving..." : "Save Changes"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
 
             return (
               <motion.div
@@ -273,28 +483,41 @@ export default function EventsManager({ initialEvents }: EventsManagerProps) {
                       {isLive ? "Live" : "Draft"}
                     </span>
 
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={() => handleToggleStatus(eventItem)}
-                      className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition disabled:opacity-50 ${
-                        isLive
-                          ? "border-amber-200 bg-amber-50/60 text-amber-800 hover:bg-amber-100"
-                          : "border-emerald-200 bg-emerald-50/70 text-emerald-700 hover:bg-emerald-100"
-                      }`}
-                    >
-                      {isLive ? (
-                        <>
-                          <FileEdit size={13} />
-                          Move to Draft
-                        </>
-                      ) : (
-                        <>
-                          <Radio size={13} />
-                          Make Live
-                        </>
-                      )}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => startEditing(eventItem)}
+                        title="Edit Event Details"
+                        className="inline-flex items-center gap-1 rounded-xl border border-orange-200 bg-orange-50/70 px-3 py-1.5 text-xs font-bold text-orange-800 transition hover:bg-orange-100 disabled:opacity-50"
+                      >
+                        <Pencil size={12} />
+                        Edit
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => handleToggleStatus(eventItem)}
+                        className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition disabled:opacity-50 ${
+                          isLive
+                            ? "border-amber-200 bg-amber-50/60 text-amber-800 hover:bg-amber-100"
+                            : "border-emerald-200 bg-emerald-50/70 text-emerald-700 hover:bg-emerald-100"
+                        }`}
+                      >
+                        {isLive ? (
+                          <>
+                            <FileEdit size={13} />
+                            Move to Draft
+                          </>
+                        ) : (
+                          <>
+                            <Radio size={13} />
+                            Make Live
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
 
                   <h3 className="mt-4 text-xl font-extrabold tracking-tight text-[#241000]">
