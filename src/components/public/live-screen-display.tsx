@@ -190,14 +190,14 @@ export default function LiveScreenDisplay({
                 Hard Refresh
               </button>
 
-              <Link
+              {/* <Link
                 href="/display"
                 title="Switch Date, Hall, or Session"
                 className="inline-flex items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3.5 py-2 text-xs font-bold text-stone-700 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
               >
                 <ArrowLeftRight size={14} />
                 Change Session
-              </Link>
+              </Link> */}
 
               <button
                 type="button"
