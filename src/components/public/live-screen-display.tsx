@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
+  ArrowLeft,
+  ArrowLeftRight,
   Building2,
   CheckCircle2,
   Clock,
@@ -44,6 +46,7 @@ interface LiveScreenDisplayProps {
 
 function formatTime(iso: string) {
   return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(iso));
@@ -66,6 +69,7 @@ export default function LiveScreenDisplay({
       if (saved) {
         const parsed = Number(saved);
         if (!Number.isNaN(parsed) && parsed > 0) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
           setClearedAfterMs(parsed);
         }
       }
@@ -140,9 +144,18 @@ export default function LiveScreenDisplay({
       {/* Clean Balanced Presentation Header */}
       <header className="sticky top-0 z-30 border-b border-orange-100 bg-white/95 shadow-sm shadow-orange-950/[0.03] backdrop-blur-xl">
         <div className="mx-auto max-w-7xl px-6 py-5 sm:px-10">
-          {/* Row 1: Session Badges (Left) + All Count & Stage Action Buttons (Right) */}
+          {/* Row 1: Back Button & Session Badges (Left) + All Count & Stage Action Buttons (Right) */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href="/display"
+                title="Back to Display Selector"
+                className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3.5 py-1 text-xs font-bold text-stone-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+              >
+                <ArrowLeft size={13} />
+                Back
+              </Link>
+
               <span className="inline-flex items-center gap-1.5 rounded-full bg-[#241000] px-3.5 py-1 text-xs font-extrabold uppercase tracking-wider text-orange-200">
                 <Building2 size={13} className="text-orange-400" />
                 {session.hall}
@@ -176,6 +189,15 @@ export default function LiveScreenDisplay({
                 <RotateCcw size={14} />
                 Hard Refresh
               </button>
+
+              <Link
+                href="/display"
+                title="Switch Date, Hall, or Session"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3.5 py-2 text-xs font-bold text-stone-700 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+              >
+                <ArrowLeftRight size={14} />
+                Change Session
+              </Link>
 
               <button
                 type="button"
