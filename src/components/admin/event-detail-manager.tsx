@@ -10,6 +10,7 @@ import {
   CalendarDays,
   Check,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   CircleHelp,
   Clock,
@@ -80,10 +81,26 @@ interface DayOption {
   formattedDate: string; // 23 Nov 2026
 }
 
+const QUESTIONS_PER_PAGE = 5;
+
 function toYMD(isoOrDate: string): string {
   const match = isoOrDate.trim().match(/^(\d{4}-\d{2}-\d{2})/);
   if (match) return match[1];
   return new Date(isoOrDate).toISOString().slice(0, 10);
+}
+
+function parseTimeToMinutes(timeStr: string): number {
+  const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  if (!match) return Number.MAX_SAFE_INTEGER;
+
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const period = match[3]?.toUpperCase();
+
+  if (period === "PM" && hours !== 12) hours += 12;
+  if (period === "AM" && hours === 12) hours = 0;
+
+  return hours * 60 + minutes;
 }
 
 function formatReadableDate(ymd: string): string {
@@ -105,6 +122,7 @@ function formatShortDate(dateString: string | null) {
 
 function formatTime(isoString: string) {
   return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(isoString));
@@ -157,8 +175,23 @@ export default function EventDetailManager({
 }: EventDetailManagerProps) {
   const router = useRouter();
 
-  const [eventStatus, setEventStatus] = useState<"draft" | "live">(event.status);
+  const [eventData, setEventData] = useState<EventDetailData>(event);
   const [statusLoading, setStatusLoading] = useState(false);
+
+  // Edit Event inline state
+  const [editingEvent, setEditingEvent] = useState(false);
+  const [editEventTitle, setEditEventTitle] = useState(event.title);
+  const [editEventVenue, setEditEventVenue] = useState(event.venue);
+  const [editEventStartDate, setEditEventStartDate] = useState(
+    event.startDate ? toYMD(event.startDate) : ""
+  );
+  const [editEventEndDate, setEditEventEndDate] = useState(
+    event.endDate ? toYMD(event.endDate) : ""
+  );
+  const [editEventDescription, setEditEventDescription] = useState(
+    event.description
+  );
+  const [savingEvent, setSavingEvent] = useState(false);
 
   const [sessions, setSessions] = useState<SessionItemData[]>(() =>
     initialSessions.map((s) => ({
@@ -179,8 +212,8 @@ export default function EventDetailManager({
   }, [initialSessions]);
 
   const eventDays = useMemo(
-    () => buildEventDays(event.startDate, event.endDate, sessions),
-    [event.startDate, event.endDate, sessions]
+    () => buildEventDays(eventData.startDate, eventData.endDate, sessions),
+    [eventData.startDate, eventData.endDate, sessions]
   );
 
   const defaultFormDate =
@@ -207,16 +240,30 @@ export default function EventDetailManager({
   const [editDescription, setEditDescription] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
 
-  // Right-side Day -> Hall -> Session drill-down state
+  // Day -> Hall -> Session drill-down state
   const [activeDayDate, setActiveDayDate] = useState<string>(defaultFormDate);
   const [activeHallName, setActiveHallName] = useState<string>("");
 
-  // Question list filters
+  // Question list filters & pagination (5 per page)
   const [questionDayFilter, setQuestionDayFilter] = useState<string>("all");
   const [selectedHall, setSelectedHall] = useState<string>("all");
   const [selectedSessionId, setSelectedSessionId] = useState<string>("all");
+  const [questionPage, setQuestionPage] = useState<number>(1);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (eventDays.length > 0) {
+      const exists = eventDays.some((d) => d.dateStr === activeDayDate);
+      if (!exists) {
+        setActiveDayDate(eventDays[0].dateStr);
+      }
+      const formDateExists = eventDays.some((d) => d.dateStr === sessionDate);
+      if (!formDateExists) {
+        setSessionDate(eventDays[0].dateStr);
+      }
+    }
+  }, [eventDays, activeDayDate, sessionDate]);
 
   // Sessions belonging to the currently selected Day tab
   const sessionsForActiveDay = useMemo(() => {
@@ -239,10 +286,18 @@ export default function EventDetailManager({
     return hallsForActiveDay[0];
   }, [hallsForActiveDay, activeHallName]);
 
-  // Sessions inside the selected Day AND selected Hall
+  // Sessions inside the selected Day & Hall, sorted chronologically by startTime
   const sessionsForActiveDayAndHall = useMemo(() => {
     if (!effectiveActiveHall) return [];
-    return sessionsForActiveDay.filter((s) => s.hall === effectiveActiveHall);
+    return sessionsForActiveDay
+      .filter((s) => s.hall === effectiveActiveHall)
+      .slice()
+      .sort((a, b) => {
+        const diff =
+          parseTimeToMinutes(a.startTime) - parseTimeToMinutes(b.startTime);
+        if (diff !== 0) return diff;
+        return parseTimeToMinutes(a.endTime) - parseTimeToMinutes(b.endTime);
+      });
   }, [sessionsForActiveDay, effectiveActiveHall]);
 
   const allHalls = useMemo(() => {
@@ -281,13 +336,94 @@ export default function EventDetailManager({
     });
   }, [questions, sessionMap, questionDayFilter, selectedHall, selectedSessionId]);
 
+  const totalQuestionPages = Math.max(
+    1,
+    Math.ceil(filteredQuestions.length / QUESTIONS_PER_PAGE)
+  );
+
+  const safeQuestionPage = Math.min(questionPage, totalQuestionPages);
+
+  const paginatedQuestions = useMemo(() => {
+    const startIdx = (safeQuestionPage - 1) * QUESTIONS_PER_PAGE;
+    return filteredQuestions.slice(startIdx, startIdx + QUESTIONS_PER_PAGE);
+  }, [filteredQuestions, safeQuestionPage]);
+
+  function startEditingEvent() {
+    setError("");
+    setEditEventTitle(eventData.title);
+    setEditEventVenue(eventData.venue);
+    setEditEventStartDate(
+      eventData.startDate ? toYMD(eventData.startDate) : ""
+    );
+    setEditEventEndDate(eventData.endDate ? toYMD(eventData.endDate) : "");
+    setEditEventDescription(eventData.description);
+    setEditingEvent(true);
+  }
+
+  async function handleSaveEventDetails(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError("");
+
+    const trimmedTitle = editEventTitle.trim();
+    if (!trimmedTitle) {
+      setError("Event title is required.");
+      return;
+    }
+
+    if (
+      editEventStartDate &&
+      editEventEndDate &&
+      editEventEndDate < editEventStartDate
+    ) {
+      setError("End date cannot be earlier than start date.");
+      return;
+    }
+
+    setSavingEvent(true);
+
+    try {
+      const res = await fetch(`/api/admin/events/${eventData.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: trimmedTitle,
+          venue: editEventVenue.trim(),
+          startDate: editEventStartDate || null,
+          endDate: editEventEndDate || null,
+          description: editEventDescription.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.message || "Failed to update event details.");
+        return;
+      }
+
+      setEventData((prev) => ({
+        ...prev,
+        title: data.event.title,
+        venue: data.event.venue,
+        description: data.event.description,
+        startDate: data.event.startDate,
+        endDate: data.event.endDate,
+      }));
+      setEditingEvent(false);
+      router.refresh();
+    } catch {
+      setError("Network error while updating event details.");
+    } finally {
+      setSavingEvent(false);
+    }
+  }
+
   async function handleToggleEventStatus() {
-    const nextStatus = eventStatus === "live" ? "draft" : "live";
+    const nextStatus = eventData.status === "live" ? "draft" : "live";
     setStatusLoading(true);
     setError("");
 
     try {
-      const res = await fetch(`/api/admin/events/${event.id}`, {
+      const res = await fetch(`/api/admin/events/${eventData.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: nextStatus }),
@@ -297,7 +433,7 @@ export default function EventDetailManager({
         setError(data.message || "Failed to update status.");
         return;
       }
-      setEventStatus(nextStatus);
+      setEventData((prev) => ({ ...prev, status: nextStatus }));
       router.refresh();
     } catch {
       setError("Network error while updating event status.");
@@ -314,7 +450,7 @@ export default function EventDetailManager({
     const chosenDate = toYMD(sessionDate);
 
     try {
-      const res = await fetch(`/api/admin/events/${event.id}/sessions`, {
+      const res = await fetch(`/api/admin/events/${eventData.id}/sessions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -404,7 +540,6 @@ export default function EventDetailManager({
         prev.map((s) => (s.id === sessionId ? updated : s))
       );
 
-      // Update hall name on any existing questions for this session in local state
       setQuestions((prev) =>
         prev.map((q) =>
           q.sessionId === sessionId ? { ...q, hall: updated.hall } : q
@@ -533,7 +668,7 @@ export default function EventDetailManager({
     setTimeout(() => setCopiedKey(null), 2000);
   }
 
-  const isLive = eventStatus === "live";
+  const isLive = eventData.status === "live";
   const activeDayObj = dayLabelMap.get(activeDayDate);
 
   return (
@@ -548,85 +683,200 @@ export default function EventDetailManager({
         </Link>
       </div>
 
-      {/* Event Banner */}
+      {/* Event Banner (with inline Edit Event mode) */}
       <motion.section
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         className="rounded-3xl border border-orange-100 bg-white p-7 shadow-sm sm:p-9"
       >
-        <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
-          <div>
-            <div className="flex flex-wrap items-center gap-3">
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${
-                  isLive
-                    ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20"
-                    : "bg-amber-50 text-amber-800 ring-1 ring-amber-600/20"
-                }`}
+        {editingEvent ? (
+          <form onSubmit={handleSaveEventDetails} className="space-y-5">
+            <div className="flex items-center justify-between border-b border-orange-100 pb-4">
+              <div className="flex items-center gap-2 text-sm font-extrabold text-orange-700">
+                <Pencil size={16} />
+                Edit Event Details
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingEvent(false)}
+                className="rounded-xl p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
               >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    isLive ? "bg-emerald-500" : "bg-amber-500"
-                  }`}
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-stone-600">
+                  Event Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editEventTitle}
+                  onChange={(e) => setEditEventTitle(e.target.value)}
+                  className="h-11 w-full rounded-xl border border-stone-200 bg-stone-50 px-3.5 text-sm font-semibold text-[#241000] outline-none focus:border-orange-500 focus:bg-white"
                 />
-                {isLive ? "Live Event" : "Draft Mode"}
-              </span>
+              </div>
 
-              {event.venue && (
-                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-500">
-                  <MapPin size={14} className="text-orange-500" />
-                  {event.venue}
-                </span>
-              )}
+              <div>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-stone-600">
+                  Venue / Location
+                </label>
+                <input
+                  type="text"
+                  value={editEventVenue}
+                  onChange={(e) => setEditEventVenue(e.target.value)}
+                  placeholder="e.g. HICC Convention Center, Hyderabad"
+                  className="h-11 w-full rounded-xl border border-stone-200 bg-stone-50 px-3.5 text-sm text-[#241000] outline-none focus:border-orange-500 focus:bg-white"
+                />
+              </div>
+            </div>
 
-              {event.startDate && (
-                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-500">
-                  <Clock size={14} className="text-orange-500" />
-                  {formatShortDate(event.startDate)}
-                  {event.endDate &&
-                  toYMD(event.endDate) !== toYMD(event.startDate)
-                    ? ` – ${formatShortDate(event.endDate)}`
-                    : ""}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-stone-600">
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  value={editEventStartDate}
+                  onChange={(e) => setEditEventStartDate(e.target.value)}
+                  className="h-11 w-full rounded-xl border border-stone-200 bg-stone-50 px-3.5 text-sm text-[#241000] outline-none focus:border-orange-500 focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-stone-600">
+                  End Date
+                </label>
+                <input
+                  type="date"
+                  value={editEventEndDate}
+                  min={editEventStartDate || undefined}
+                  onChange={(e) => setEditEventEndDate(e.target.value)}
+                  className="h-11 w-full rounded-xl border border-stone-200 bg-stone-50 px-3.5 text-sm text-[#241000] outline-none focus:border-orange-500 focus:bg-white"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-stone-600">
+                Description
+              </label>
+              <textarea
+                rows={2}
+                value={editEventDescription}
+                onChange={(e) => setEditEventDescription(e.target.value)}
+                placeholder="Brief overview of the event..."
+                className="w-full rounded-xl border border-stone-200 bg-stone-50 p-3.5 text-sm text-[#241000] outline-none focus:border-orange-500 focus:bg-white"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={savingEvent}
+                onClick={() => setEditingEvent(false)}
+                className="rounded-xl border border-stone-200 bg-white px-5 py-2.5 text-xs font-bold text-stone-600 hover:bg-stone-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                disabled={savingEvent}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-5 py-2.5 text-xs font-bold text-white shadow-sm shadow-orange-600/20 hover:bg-orange-700 disabled:opacity-60"
+              >
+                <Check size={15} />
+                {savingEvent ? "Saving..." : "Save Event Details"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
+            <div>
+              <div className="flex flex-wrap items-center gap-3">
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${
+                    isLive
+                      ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20"
+                      : "bg-amber-50 text-amber-800 ring-1 ring-amber-600/20"
+                  }`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      isLive ? "bg-emerald-500" : "bg-amber-500"
+                    }`}
+                  />
+                  {isLive ? "Live Event" : "Draft Mode"}
                 </span>
+
+                {eventData.venue && (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-500">
+                    <MapPin size={14} className="text-orange-500" />
+                    {eventData.venue}
+                  </span>
+                )}
+
+                {eventData.startDate && (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-500">
+                    <Clock size={14} className="text-orange-500" />
+                    {formatShortDate(eventData.startDate)}
+                    {eventData.endDate &&
+                    toYMD(eventData.endDate) !== toYMD(eventData.startDate)
+                      ? ` – ${formatShortDate(eventData.endDate)}`
+                      : ""}
+                  </span>
+                )}
+              </div>
+
+              <h2 className="mt-3 text-2xl font-extrabold tracking-tight text-[#241000] sm:text-3xl">
+                {eventData.title}
+              </h2>
+
+              {eventData.description && (
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">
+                  {eventData.description}
+                </p>
               )}
             </div>
 
-            <h2 className="mt-3 text-2xl font-extrabold tracking-tight text-[#241000] sm:text-3xl">
-              {event.title}
-            </h2>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={startEditingEvent}
+                className="inline-flex items-center gap-2 rounded-xl border border-orange-200 bg-orange-50/70 px-4 py-3 text-sm font-bold text-orange-800 transition hover:bg-orange-100"
+              >
+                <Pencil size={15} />
+                Edit Event
+              </button>
 
-            {event.description && (
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">
-                {event.description}
-              </p>
-            )}
+              <button
+                type="button"
+                disabled={statusLoading}
+                onClick={handleToggleEventStatus}
+                className={`inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-bold shadow-sm transition disabled:opacity-50 ${
+                  isLive
+                    ? "border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                    : "bg-emerald-600 text-white shadow-emerald-600/20 hover:bg-emerald-700"
+                }`}
+              >
+                {isLive ? (
+                  <>
+                    <FileEdit size={16} />
+                    Switch to Draft
+                  </>
+                ) : (
+                  <>
+                    <Radio size={16} />
+                    Publish Event Live
+                  </>
+                )}
+              </button>
+            </div>
           </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              disabled={statusLoading}
-              onClick={handleToggleEventStatus}
-              className={`inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-bold shadow-sm transition disabled:opacity-50 ${
-                isLive
-                  ? "border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
-                  : "bg-emerald-600 text-white shadow-emerald-600/20 hover:bg-emerald-700"
-              }`}
-            >
-              {isLive ? (
-                <>
-                  <FileEdit size={16} />
-                  Switch to Draft
-                </>
-              ) : (
-                <>
-                  <Radio size={16} />
-                  Publish Event Live
-                </>
-              )}
-            </button>
-          </div>
-        </div>
+        )}
       </motion.section>
 
       {error && (
@@ -638,8 +888,8 @@ export default function EventDetailManager({
         </div>
       )}
 
-      {/* Sessions Section: Add Form (Left) + Day -> Hall -> Session Explorer (Right) */}
-      <section className="grid gap-7 lg:grid-cols-12">
+      {/* Top Row: Add Session & Hall (Left) + Submitted Audience Questions (Right - 5 per page) */}
+      <section className="grid items-start gap-7 lg:grid-cols-12">
         {/* Create Session Card */}
         <div className="rounded-3xl border border-orange-100 bg-white p-6 shadow-sm sm:p-7 lg:col-span-5">
           <div className="mb-5 flex items-center gap-3">
@@ -657,7 +907,6 @@ export default function EventDetailManager({
           </div>
 
           <form onSubmit={handleCreateSession} className="space-y-4">
-            {/* Session Date — Auto-populated from Event Start & End Dates */}
             <div>
               <label
                 htmlFor="sessionDate"
@@ -824,594 +1073,128 @@ export default function EventDetailManager({
           </form>
         </div>
 
-        {/* Right Side: Day 1 / Day 2 / Day 3 -> Hall -> Sessions Drill-Down */}
+        {/* Submitted Audience Questions (5 per page with Next / Prev buttons) */}
         <div className="rounded-3xl border border-orange-100 bg-white p-6 shadow-sm sm:p-7 lg:col-span-7">
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h3 className="text-lg font-extrabold text-[#241000]">
-                Schedule by Day &amp; Hall ({sessions.length} Total)
-              </h3>
-              <p className="text-xs text-stone-500">
-                Select a Day, then click a Hall to view, edit, or export its
-                sessions.
-              </p>
-            </div>
-          </div>
-
-          {/* Step 1: Day Selector Pills (Day 1, Day 2, Day 3...) */}
-          {eventDays.length > 0 && (
-            <div className="mb-5">
-              <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-stone-400">
-                1. Choose Day
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {eventDays.map((day) => {
-                  const countOnDay = sessions.filter(
-                    (s) => toYMD(s.sessionDate) === day.dateStr
-                  ).length;
-                  const isSelected = activeDayDate === day.dateStr;
-
-                  return (
-                    <button
-                      key={day.dateStr}
-                      type="button"
-                      onClick={() => {
-                        setActiveDayDate(day.dateStr);
-                        setSessionDate(day.dateStr);
-                      }}
-                      className={`flex items-center gap-2.5 rounded-2xl border px-4 py-2.5 text-left transition ${
-                        isSelected
-                          ? "border-orange-600 bg-orange-600 text-white shadow-md shadow-orange-600/20"
-                          : "border-orange-100 bg-[#fffaf5] text-[#241000] hover:border-orange-300"
-                      }`}
-                    >
-                      <CalendarDays
-                        size={15}
-                        className={
-                          isSelected ? "text-orange-100" : "text-orange-600"
-                        }
-                      />
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-extrabold">
-                            {day.dayLabel}
-                          </span>
-                          <span
-                            className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                              isSelected
-                                ? "bg-white/20 text-white"
-                                : "bg-orange-100 text-orange-800"
-                            }`}
-                          >
-                            {countOnDay}
-                          </span>
-                        </div>
-                        <p
-                          className={`text-[10px] ${
-                            isSelected ? "text-orange-100" : "text-stone-500"
-                          }`}
-                        >
-                          {day.formattedDate}
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Step 2: Halls inside the selected Day */}
-          {sessionsForActiveDay.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-orange-200 bg-[#fffaf5] px-6 py-14 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-100 text-orange-600">
-                <Layers size={22} />
-              </div>
-              <h4 className="mt-4 text-base font-extrabold text-[#241000]">
-                No sessions scheduled for{" "}
-                {activeDayObj
-                  ? `${activeDayObj.dayLabel} (${activeDayObj.formattedDate})`
-                  : "this date"}
-              </h4>
-              <p className="mt-1 max-w-sm text-xs leading-5 text-stone-500">
-                Use the form on the left to add sessions for Hall A, Hall B,
-                etc. on this day.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-5">
+          <div className="flex flex-col justify-between gap-3 border-b border-orange-100 pb-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-stone-400">
-                  2. Choose Hall on {activeDayObj?.dayLabel || activeDayDate}
+                <h3 className="text-lg font-extrabold text-[#241000]">
+                  Submitted Audience Questions ({filteredQuestions.length})
+                </h3>
+                <p className="mt-0.5 text-xs text-stone-500">
+                  Showing {QUESTIONS_PER_PAGE} per page · Filter by day, hall,
+                  or session
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  {hallsForActiveDay.map((hallName) => {
-                    const hallSessionCount = sessionsForActiveDay.filter(
-                      (s) => s.hall === hallName
-                    ).length;
-                    const isHallSelected = effectiveActiveHall === hallName;
-
-                    return (
-                      <button
-                        key={hallName}
-                        type="button"
-                        onClick={() => setActiveHallName(hallName)}
-                        className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-bold transition ${
-                          isHallSelected
-                            ? "border-[#241000] bg-[#241000] text-white shadow-sm"
-                            : "border-stone-200 bg-stone-50 text-[#241000] hover:border-orange-300 hover:bg-orange-50"
-                        }`}
-                      >
-                        <Building2
-                          size={14}
-                          className={
-                            isHallSelected
-                              ? "text-orange-300"
-                              : "text-orange-600"
-                          }
-                        />
-                        <span>{hallName}</span>
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] ${
-                            isHallSelected
-                              ? "bg-white/15 text-orange-200"
-                              : "bg-white text-stone-600"
-                          }`}
-                        >
-                          {hallSessionCount}{" "}
-                          {hallSessionCount === 1 ? "session" : "sessions"}
-                        </span>
-                        <ChevronRight size={13} className="opacity-60" />
-                      </button>
-                    );
-                  })}
-                </div>
               </div>
 
-              {/* Step 3: Sessions inside the selected Day & Hall */}
-              <div>
-                <p className="mb-2.5 text-[11px] font-bold uppercase tracking-wider text-stone-400">
-                  3. Sessions in {effectiveActiveHall} (
-                  {sessionsForActiveDayAndHall.length})
-                </p>
-
-                <div className="space-y-3.5">
-                  {sessionsForActiveDayAndHall.map((sessionItem) => {
-                    const qCount =
-                      questionCountBySession.get(sessionItem.id) ?? 0;
-                    const isEditing = editingSessionId === sessionItem.id;
-
-                    if (isEditing) {
-                      return (
-                        <div
-                          key={sessionItem.id}
-                          className="rounded-2xl border-2 border-orange-400 bg-orange-50/40 p-5 shadow-sm"
-                        >
-                          <div className="mb-4 flex items-center justify-between">
-                            <span className="inline-flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wide text-orange-700">
-                              <Pencil size={13} />
-                              Edit Session Details
-                            </span>
-                            <button
-                              type="button"
-                              onClick={cancelEditingSession}
-                              className="rounded-lg p-1 text-stone-400 hover:bg-white hover:text-stone-700"
-                            >
-                              <X size={16} />
-                            </button>
-                          </div>
-
-                          <div className="space-y-3">
-                            <div>
-                              <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
-                                Session Title *
-                              </label>
-                              <input
-                                type="text"
-                                required
-                                value={editTitle}
-                                onChange={(e) => setEditTitle(e.target.value)}
-                                className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-sm font-semibold text-[#241000] outline-none focus:border-orange-500"
-                              />
-                            </div>
-
-                            <div className="grid gap-3 sm:grid-cols-3">
-                              <div>
-                                <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
-                                  Day / Date *
-                                </label>
-                                {eventDays.length > 0 ? (
-                                  <select
-                                    value={editSessionDate}
-                                    onChange={(e) =>
-                                      setEditSessionDate(e.target.value)
-                                    }
-                                    className="h-10 w-full rounded-xl border border-stone-200 bg-white px-2.5 text-xs font-bold text-[#241000] outline-none focus:border-orange-500"
-                                  >
-                                    {eventDays.map((d) => (
-                                      <option key={d.dateStr} value={d.dateStr}>
-                                        {d.dayLabel} — {d.formattedDate}
-                                      </option>
-                                    ))}
-                                  </select>
-                                ) : (
-                                  <input
-                                    type="date"
-                                    value={editSessionDate}
-                                    onChange={(e) =>
-                                      setEditSessionDate(e.target.value)
-                                    }
-                                    className="h-10 w-full rounded-xl border border-stone-200 bg-white px-2.5 text-xs text-[#241000] outline-none focus:border-orange-500"
-                                  />
-                                )}
-                              </div>
-
-                              <div>
-                                <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
-                                  Hall / Room *
-                                </label>
-                                <input
-                                  type="text"
-                                  required
-                                  list="existing-halls-list"
-                                  value={editHall}
-                                  onChange={(e) => setEditHall(e.target.value)}
-                                  className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs font-bold text-[#241000] outline-none focus:border-orange-500"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
-                                  Speaker
-                                </label>
-                                <input
-                                  type="text"
-                                  value={editSpeaker}
-                                  onChange={(e) =>
-                                    setEditSpeaker(e.target.value)
-                                  }
-                                  placeholder="Optional"
-                                  className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs text-[#241000] outline-none focus:border-orange-500"
-                                />
-                              </div>
-                            </div>
-
-                            <div className="grid gap-3 sm:grid-cols-2">
-                              <div>
-                                <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
-                                  Start Time *
-                                </label>
-                                <input
-                                  type="text"
-                                  required
-                                  value={editStartTime}
-                                  onChange={(e) =>
-                                    setEditStartTime(e.target.value)
-                                  }
-                                  className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs text-[#241000] outline-none focus:border-orange-500"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
-                                  End Time *
-                                </label>
-                                <input
-                                  type="text"
-                                  required
-                                  value={editEndTime}
-                                  onChange={(e) =>
-                                    setEditEndTime(e.target.value)
-                                  }
-                                  className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs text-[#241000] outline-none focus:border-orange-500"
-                                />
-                              </div>
-                            </div>
-
-                            <div>
-                              <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
-                                Topic Notes
-                              </label>
-                              <textarea
-                                rows={2}
-                                value={editDescription}
-                                onChange={(e) =>
-                                  setEditDescription(e.target.value)
-                                }
-                                className="w-full rounded-xl border border-stone-200 bg-white p-2.5 text-xs text-[#241000] outline-none focus:border-orange-500"
-                              />
-                            </div>
-
-                            <div className="flex items-center justify-end gap-2 pt-2">
-                              <button
-                                type="button"
-                                onClick={cancelEditingSession}
-                                disabled={savingEdit}
-                                className="rounded-xl border border-stone-200 bg-white px-4 py-2 text-xs font-bold text-stone-600 hover:bg-stone-50"
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                type="button"
-                                disabled={savingEdit}
-                                onClick={() =>
-                                  handleSaveSessionEdit(sessionItem.id)
-                                }
-                                className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-orange-700 disabled:opacity-60"
-                              >
-                                <Check size={14} />
-                                {savingEdit ? "Saving..." : "Save Changes"}
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <div
-                        key={sessionItem.id}
-                        className="rounded-2xl border border-orange-100 bg-[#fffaf5]/60 p-5 transition hover:border-orange-200 hover:bg-white"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="inline-flex items-center gap-1 rounded-lg bg-[#241000] px-2.5 py-1 text-xs font-bold text-orange-200">
-                                <Building2 size={12} />
-                                {sessionItem.hall}
-                              </span>
-
-                              <span className="inline-flex items-center gap-1 rounded-lg bg-orange-100/80 px-2.5 py-1 text-xs font-bold text-orange-800">
-                                <Clock size={12} />
-                                {sessionItem.startTime} – {sessionItem.endTime}
-                              </span>
-
-                              <span
-                                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                                  sessionItem.isActive
-                                    ? "bg-emerald-50 text-emerald-700"
-                                    : "bg-stone-200/70 text-stone-600"
-                                }`}
-                              >
-                                {sessionItem.isActive ? "Active" : "Completed"}
-                              </span>
-                            </div>
-
-                            <h4 className="mt-2.5 text-base font-extrabold text-[#241000]">
-                              {sessionItem.title}
-                            </h4>
-
-                            {sessionItem.speaker && (
-                              <p className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-stone-500">
-                                <Mic2 size={13} className="text-orange-500" />
-                                {sessionItem.speaker}
-                              </p>
-                            )}
-
-                            {sessionItem.description && (
-                              <p className="mt-1.5 text-xs leading-5 text-stone-500">
-                                {sessionItem.description}
-                              </p>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => startEditingSession(sessionItem)}
-                              title="Edit Session Details"
-                              className="inline-flex items-center gap-1 rounded-xl border border-orange-200 bg-white px-3 py-1.5 text-xs font-bold text-orange-700 transition hover:bg-orange-50"
-                            >
-                              <Pencil size={12} />
-                              Edit
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleToggleSessionActive(sessionItem)
-                              }
-                              className="rounded-xl border border-stone-200 bg-white px-3 py-1.5 text-xs font-bold text-stone-700 transition hover:border-orange-300 hover:text-orange-700"
-                            >
-                              {sessionItem.isActive
-                                ? "Mark Completed"
-                                : "Reopen Session"}
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteSession(sessionItem)}
-                              aria-label={`Delete ${sessionItem.title}`}
-                              className="flex h-8 w-8 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-orange-100/80 pt-3.5">
-                          <span className="inline-flex items-center gap-1.5 text-xs font-bold text-stone-600">
-                            <CircleHelp size={14} className="text-orange-600" />
-                            {qCount} {qCount === 1 ? "Question" : "Questions"}
-                          </span>
-
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleCopyUrl(
-                                  `ask-${sessionItem.id}`,
-                                  `/ask/${sessionItem.id}`
-                                )
-                              }
-                              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-1.5 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100"
-                            >
-                              <Link2 size={13} />
-                              {copiedKey === `ask-${sessionItem.id}`
-                                ? "Ask Link Copied!"
-                                : "Copy Ask Link"}
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleCopyUrl(
-                                  `display-${sessionItem.id}`,
-                                  `/display/${sessionItem.id}`
-                                )
-                              }
-                              className="inline-flex items-center gap-1.5 rounded-xl border border-orange-200 bg-white px-3 py-1.5 text-xs font-bold text-orange-700 transition hover:bg-orange-50"
-                            >
-                              <Copy size={13} />
-                              {copiedKey === `display-${sessionItem.id}`
-                                ? "Screen URL Copied!"
-                                : "Copy Screen URL"}
-                            </button>
-
-                            <Link
-                              href={`/display/${sessionItem.id}`}
-                              target="_blank"
-                              className="inline-flex items-center gap-1.5 rounded-xl bg-[#241000] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-orange-600"
-                            >
-                              <ExternalLink size={13} />
-                              Public Screen
-                            </Link>
-
-                            <a
-                              href={`/api/admin/sessions/${sessionItem.id}/export`}
-                              className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm shadow-orange-600/20 transition hover:bg-orange-700"
-                            >
-                              <Download size={13} />
-                              Download Excel
-                            </a>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              {selectedSessionId !== "all" && (
+                <a
+                  href={`/api/admin/sessions/${selectedSessionId}/export`}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-orange-600 px-3.5 text-xs font-bold text-white shadow-sm shadow-orange-600/20 transition hover:bg-orange-700"
+                >
+                  <Download size={13} />
+                  Download Excel
+                </a>
+              )}
             </div>
-          )}
-        </div>
-      </section>
 
-      {/* Audience Questions Section */}
-      <section className="rounded-3xl border border-orange-100 bg-white p-6 shadow-sm sm:p-8">
-        <div className="flex flex-col justify-between gap-4 border-b border-orange-100 pb-6 md:flex-row md:items-center">
-          <div>
-            <h3 className="text-xl font-extrabold text-[#241000]">
-              Submitted Audience Questions ({filteredQuestions.length})
-            </h3>
-            <p className="mt-1 text-sm text-stone-500">
-              Filter by day, hall, or session, highlight key questions for the
-              stage screen, or export completed session Q&amp;A.
-            </p>
-          </div>
+            <div className="flex flex-wrap items-center gap-2.5 pt-1">
+              {eventDays.length > 0 && (
+                <select
+                  aria-label="Filter by Day"
+                  value={questionDayFilter}
+                  onChange={(e) => {
+                    setQuestionDayFilter(e.target.value);
+                    setSelectedSessionId("all");
+                    setQuestionPage(1);
+                  }}
+                  className="h-9 rounded-xl border border-stone-200 bg-stone-50 px-3 text-xs font-bold text-[#241000] outline-none focus:border-orange-500"
+                >
+                  <option value="all">All Days</option>
+                  {eventDays.map((d) => (
+                    <option key={d.dateStr} value={d.dateStr}>
+                      {d.dayLabel} ({d.formattedDate})
+                    </option>
+                  ))}
+                </select>
+              )}
 
-          <div className="flex flex-wrap items-center gap-3">
-            {eventDays.length > 0 && (
               <select
-                aria-label="Filter by Day"
-                value={questionDayFilter}
+                aria-label="Filter by Hall"
+                value={selectedHall}
                 onChange={(e) => {
-                  setQuestionDayFilter(e.target.value);
+                  setSelectedHall(e.target.value);
                   setSelectedSessionId("all");
+                  setQuestionPage(1);
                 }}
-                className="h-10 rounded-xl border border-stone-200 bg-stone-50 px-3.5 text-xs font-bold text-[#241000] outline-none focus:border-orange-500"
+                className="h-9 rounded-xl border border-stone-200 bg-stone-50 px-3 text-xs font-bold text-[#241000] outline-none focus:border-orange-500"
               >
-                <option value="all">All Days</option>
-                {eventDays.map((d) => (
-                  <option key={d.dateStr} value={d.dateStr}>
-                    {d.dayLabel} ({d.formattedDate})
+                <option value="all">All Halls</option>
+                {allHalls.map((h) => (
+                  <option key={h} value={h}>
+                    {h}
                   </option>
                 ))}
               </select>
-            )}
 
-            <select
-              aria-label="Filter by Hall"
-              value={selectedHall}
-              onChange={(e) => {
-                setSelectedHall(e.target.value);
-                setSelectedSessionId("all");
-              }}
-              className="h-10 rounded-xl border border-stone-200 bg-stone-50 px-3.5 text-xs font-bold text-[#241000] outline-none focus:border-orange-500"
-            >
-              <option value="all">All Halls</option>
-              {allHalls.map((h) => (
-                <option key={h} value={h}>
-                  {h}
-                </option>
-              ))}
-            </select>
-
-            <select
-              aria-label="Filter by Session"
-              value={selectedSessionId}
-              onChange={(e) => setSelectedSessionId(e.target.value)}
-              className="h-10 rounded-xl border border-stone-200 bg-stone-50 px-3.5 text-xs font-bold text-[#241000] outline-none focus:border-orange-500"
-            >
-              <option value="all">All Sessions</option>
-              {sessions
-                .filter(
-                  (s) =>
-                    (questionDayFilter === "all" ||
-                      toYMD(s.sessionDate) === questionDayFilter) &&
-                    (selectedHall === "all" || s.hall === selectedHall)
-                )
-                .map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {dayLabelMap.get(toYMD(s.sessionDate))?.dayLabel ||
-                      s.sessionDate}{" "}
-                    · {s.hall} — {s.title} ({s.startTime})
-                  </option>
-                ))}
-            </select>
-
-            {selectedSessionId !== "all" && (
-              <a
-                href={`/api/admin/sessions/${selectedSessionId}/export`}
-                className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-orange-600 px-4 text-xs font-bold text-white shadow-sm shadow-orange-600/20 transition hover:bg-orange-700"
+              <select
+                aria-label="Filter by Session"
+                value={selectedSessionId}
+                onChange={(e) => {
+                  setSelectedSessionId(e.target.value);
+                  setQuestionPage(1);
+                }}
+                className="h-9 min-w-[180px] flex-1 rounded-xl border border-stone-200 bg-stone-50 px-3 text-xs font-bold text-[#241000] outline-none focus:border-orange-500"
               >
-                <Download size={14} />
-                Download Excel
-              </a>
-            )}
-          </div>
-        </div>
-
-        {filteredQuestions.length === 0 ? (
-          <div className="mt-6 flex flex-col items-center justify-center rounded-2xl border border-dashed border-orange-200 bg-[#fffaf5] px-6 py-14 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-100 text-orange-600">
-              <Sparkles size={22} />
+                <option value="all">All Sessions</option>
+                {sessions
+                  .filter(
+                    (s) =>
+                      (questionDayFilter === "all" ||
+                        toYMD(s.sessionDate) === questionDayFilter) &&
+                      (selectedHall === "all" || s.hall === selectedHall)
+                  )
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {dayLabelMap.get(toYMD(s.sessionDate))?.dayLabel ||
+                        s.sessionDate}{" "}
+                      · {s.hall} — {s.title} ({s.startTime})
+                    </option>
+                  ))}
+              </select>
             </div>
-            <h4 className="mt-4 text-base font-extrabold text-[#241000]">
-              No questions here yet
-            </h4>
-            <p className="mt-1 max-w-md text-xs leading-5 text-stone-500">
-              Once your event is Live and attendees submit questions using the
-              session&apos;s Ask Link, they will appear right here.
-            </p>
           </div>
-        ) : (
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            {filteredQuestions.map((q) => {
-              const parentSession = sessionMap.get(q.sessionId);
-              const dayInfo = parentSession
-                ? dayLabelMap.get(toYMD(parentSession.sessionDate))
-                : undefined;
 
-              return (
-                <div
-                  key={q.id}
-                  className={`flex flex-col justify-between rounded-2xl border p-5 transition ${
-                    q.isFeatured
-                      ? "border-orange-400 bg-orange-50/50 shadow-sm"
-                      : "border-orange-100 bg-[#fffaf5]/50"
-                  }`}
-                >
-                  <div>
+          {filteredQuestions.length === 0 ? (
+            <div className="mt-5 flex flex-col items-center justify-center rounded-2xl border border-dashed border-orange-200 bg-[#fffaf5] px-6 py-14 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-100 text-orange-600">
+                <Sparkles size={22} />
+              </div>
+              <h4 className="mt-4 text-base font-extrabold text-[#241000]">
+                No questions here yet
+              </h4>
+              <p className="mt-1 max-w-md text-xs leading-5 text-stone-500">
+                Once your event is Live and attendees submit questions using the
+                session&apos;s Ask Link, they will appear right here.
+              </p>
+            </div>
+          ) : (
+            <div className="mt-5 space-y-3">
+              {paginatedQuestions.map((q) => {
+                const parentSession = sessionMap.get(q.sessionId);
+                const dayInfo = parentSession
+                  ? dayLabelMap.get(toYMD(parentSession.sessionDate))
+                  : undefined;
+
+                return (
+                  <div
+                    key={q.id}
+                    className={`rounded-2xl border p-4 transition ${
+                      q.isFeatured
+                        ? "border-orange-400 bg-orange-50/50 shadow-sm"
+                        : "border-orange-100 bg-[#fffaf5]/60"
+                    }`}
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex flex-wrap items-center gap-1.5">
                         {dayInfo && (
@@ -1434,59 +1217,583 @@ export default function EventDetailManager({
                       </span>
                     </div>
 
-                    <p className="mt-3 text-sm font-semibold leading-6 text-[#241000]">
+                    <p className="mt-2.5 text-sm font-semibold leading-6 text-[#241000]">
                       {q.questionText}
                     </p>
-                  </div>
 
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-orange-100 pt-3">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-600">
-                      <User size={13} className="text-orange-500" />
-                      {q.participantName || "Anonymous"}
-                    </span>
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-orange-100/80 pt-2.5">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-600">
+                        <User size={13} className="text-orange-500" />
+                        {q.participantName || "Anonymous"}
+                      </span>
 
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleQuestionFlag(q, "isFeatured")}
-                        title="Highlight on Public Screen"
-                        className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition ${
-                          q.isFeatured
-                            ? "bg-orange-600 text-white"
-                            : "border border-stone-200 bg-white text-stone-600 hover:border-orange-300"
-                        }`}
-                      >
-                        <Star size={12} />
-                        {q.isFeatured ? "Featured" : "Feature"}
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleToggleQuestionFlag(q, "isFeatured")
+                          }
+                          title="Highlight on Public Screen"
+                          className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                            q.isFeatured
+                              ? "bg-orange-600 text-white"
+                              : "border border-stone-200 bg-white text-stone-600 hover:border-orange-300"
+                          }`}
+                        >
+                          <Star size={12} />
+                          {q.isFeatured ? "Featured" : "Feature"}
+                        </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleToggleQuestionFlag(q, "isAnswered")}
-                        title="Mark as Answered"
-                        className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition ${
-                          q.isAnswered
-                            ? "bg-emerald-600 text-white"
-                            : "border border-stone-200 bg-white text-stone-600 hover:border-emerald-300"
-                        }`}
-                      >
-                        <CheckCircle2 size={12} />
-                        {q.isAnswered ? "Answered" : "Mark Answered"}
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleToggleQuestionFlag(q, "isAnswered")
+                          }
+                          title="Mark as Answered"
+                          className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                            q.isAnswered
+                              ? "bg-emerald-600 text-white"
+                              : "border border-stone-200 bg-white text-stone-600 hover:border-emerald-300"
+                          }`}
+                        >
+                          <CheckCircle2 size={12} />
+                          {q.isAnswered ? "Answered" : "Mark Answered"}
+                        </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteQuestion(q.id)}
-                        aria-label="Delete question"
-                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteQuestion(q.id)}
+                          aria-label="Delete question"
+                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </div>
                   </div>
+                );
+              })}
+
+              {/* Pagination Footer (Previous / Next) */}
+              {totalQuestionPages > 1 && (
+                <div className="flex items-center justify-between border-t border-orange-100 pt-4">
+                  <p className="text-xs font-medium text-stone-500">
+                    Showing{" "}
+                    <strong className="text-[#241000]">
+                      {(safeQuestionPage - 1) * QUESTIONS_PER_PAGE + 1}
+                    </strong>
+                    –
+                    <strong className="text-[#241000]">
+                      {Math.min(
+                        safeQuestionPage * QUESTIONS_PER_PAGE,
+                        filteredQuestions.length
+                      )}
+                    </strong>{" "}
+                    of{" "}
+                    <strong className="text-[#241000]">
+                      {filteredQuestions.length}
+                    </strong>
+                  </p>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={safeQuestionPage <= 1}
+                      onClick={() =>
+                        setQuestionPage((p) => Math.max(1, p - 1))
+                      }
+                      className="inline-flex items-center gap-1 rounded-xl border border-stone-200 bg-white px-3 py-1.5 text-xs font-bold text-stone-700 transition hover:border-orange-300 hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <ChevronLeft size={14} />
+                      Previous
+                    </button>
+
+                    <span className="px-2 text-xs font-extrabold text-[#241000]">
+                      {safeQuestionPage} / {totalQuestionPages}
+                    </span>
+
+                    <button
+                      type="button"
+                      disabled={safeQuestionPage >= totalQuestionPages}
+                      onClick={() =>
+                        setQuestionPage((p) =>
+                          Math.min(totalQuestionPages, p + 1)
+                        )
+                      }
+                      className="inline-flex items-center gap-1 rounded-xl bg-[#241000] px-3.5 py-1.5 text-xs font-bold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Next
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
                 </div>
-              );
-            })}
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Full-Width Bottom Section: Schedule by Day & Hall (Chronological Time Order) */}
+      <section className="rounded-3xl border border-orange-100 bg-white p-6 shadow-sm sm:p-8">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-2 border-b border-orange-100 pb-5">
+          <div>
+            <h3 className="text-xl font-extrabold text-[#241000]">
+              Schedule by Day &amp; Hall ({sessions.length} Total)
+            </h3>
+            <p className="mt-1 text-sm text-stone-500">
+              Select a Day, then click a Hall to view its sessions sorted in
+              chronological time order.
+            </p>
+          </div>
+        </div>
+
+        {/* Step 1: Day Selector Pills (Day 1, Day 2, Day 3...) */}
+        {eventDays.length > 0 && (
+          <div className="mb-6">
+            <p className="mb-2.5 text-[11px] font-bold uppercase tracking-wider text-stone-400">
+              1. Choose Day
+            </p>
+            <div className="flex flex-wrap gap-2.5">
+              {eventDays.map((day) => {
+                const countOnDay = sessions.filter(
+                  (s) => toYMD(s.sessionDate) === day.dateStr
+                ).length;
+                const isSelected = activeDayDate === day.dateStr;
+
+                return (
+                  <button
+                    key={day.dateStr}
+                    type="button"
+                    onClick={() => {
+                      setActiveDayDate(day.dateStr);
+                      setSessionDate(day.dateStr);
+                    }}
+                    className={`flex items-center gap-2.5 rounded-2xl border px-4 py-2.5 text-left transition ${
+                      isSelected
+                        ? "border-orange-600 bg-orange-600 text-white shadow-md shadow-orange-600/20"
+                        : "border-orange-100 bg-[#fffaf5] text-[#241000] hover:border-orange-300"
+                    }`}
+                  >
+                    <CalendarDays
+                      size={15}
+                      className={
+                        isSelected ? "text-orange-100" : "text-orange-600"
+                      }
+                    />
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-extrabold">
+                          {day.dayLabel}
+                        </span>
+                        <span
+                          className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                            isSelected
+                              ? "bg-white/20 text-white"
+                              : "bg-orange-100 text-orange-800"
+                          }`}
+                        >
+                          {countOnDay}
+                        </span>
+                      </div>
+                      <p
+                        className={`text-[10px] ${
+                          isSelected ? "text-orange-100" : "text-stone-500"
+                        }`}
+                      >
+                        {day.formattedDate}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Step 2: Halls inside the selected Day */}
+        {sessionsForActiveDay.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-orange-200 bg-[#fffaf5] px-6 py-14 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-100 text-orange-600">
+              <Layers size={22} />
+            </div>
+            <h4 className="mt-4 text-base font-extrabold text-[#241000]">
+              No sessions scheduled for{" "}
+              {activeDayObj
+                ? `${activeDayObj.dayLabel} (${activeDayObj.formattedDate})`
+                : "this date"}
+            </h4>
+            <p className="mt-1 max-w-sm text-xs leading-5 text-stone-500">
+              Use the form above to add sessions for Hall A, Hall B, etc. on
+              this day.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div>
+              <p className="mb-2.5 text-[11px] font-bold uppercase tracking-wider text-stone-400">
+                2. Choose Hall on {activeDayObj?.dayLabel || activeDayDate}
+              </p>
+              <div className="flex flex-wrap gap-2.5">
+                {hallsForActiveDay.map((hallName) => {
+                  const hallSessionCount = sessionsForActiveDay.filter(
+                    (s) => s.hall === hallName
+                  ).length;
+                  const isHallSelected = effectiveActiveHall === hallName;
+
+                  return (
+                    <button
+                      key={hallName}
+                      type="button"
+                      onClick={() => setActiveHallName(hallName)}
+                      className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-bold transition ${
+                        isHallSelected
+                          ? "border-[#241000] bg-[#241000] text-white shadow-sm"
+                          : "border-stone-200 bg-stone-50 text-[#241000] hover:border-orange-300 hover:bg-orange-50"
+                      }`}
+                    >
+                      <Building2
+                        size={14}
+                        className={
+                          isHallSelected ? "text-orange-300" : "text-orange-600"
+                        }
+                      />
+                      <span>{hallName}</span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] ${
+                          isHallSelected
+                            ? "bg-white/15 text-orange-200"
+                            : "bg-white text-stone-600"
+                        }`}
+                      >
+                        {hallSessionCount}{" "}
+                        {hallSessionCount === 1 ? "session" : "sessions"}
+                      </span>
+                      <ChevronRight size={13} className="opacity-60" />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Step 3: Sessions inside the selected Day & Hall (Sorted by Time) */}
+            <div>
+              <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-stone-400">
+                3. Sessions in {effectiveActiveHall} — Ordered by Time (
+                {sessionsForActiveDayAndHall.length})
+              </p>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                {sessionsForActiveDayAndHall.map((sessionItem) => {
+                  const qCount =
+                    questionCountBySession.get(sessionItem.id) ?? 0;
+                  const isEditing = editingSessionId === sessionItem.id;
+
+                  if (isEditing) {
+                    return (
+                      <div
+                        key={sessionItem.id}
+                        className="rounded-2xl border-2 border-orange-400 bg-orange-50/40 p-5 shadow-sm"
+                      >
+                        <div className="mb-4 flex items-center justify-between">
+                          <span className="inline-flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wide text-orange-700">
+                            <Pencil size={13} />
+                            Edit Session Details
+                          </span>
+                          <button
+                            type="button"
+                            onClick={cancelEditingSession}
+                            className="rounded-lg p-1 text-stone-400 hover:bg-white hover:text-stone-700"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div>
+                            <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
+                              Session Title *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={editTitle}
+                              onChange={(e) => setEditTitle(e.target.value)}
+                              className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-sm font-semibold text-[#241000] outline-none focus:border-orange-500"
+                            />
+                          </div>
+
+                          <div className="grid gap-3 sm:grid-cols-3">
+                            <div>
+                              <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
+                                Day / Date *
+                              </label>
+                              {eventDays.length > 0 ? (
+                                <select
+                                  value={editSessionDate}
+                                  onChange={(e) =>
+                                    setEditSessionDate(e.target.value)
+                                  }
+                                  className="h-10 w-full rounded-xl border border-stone-200 bg-white px-2.5 text-xs font-bold text-[#241000] outline-none focus:border-orange-500"
+                                >
+                                  {eventDays.map((d) => (
+                                    <option key={d.dateStr} value={d.dateStr}>
+                                      {d.dayLabel} — {d.formattedDate}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input
+                                  type="date"
+                                  value={editSessionDate}
+                                  onChange={(e) =>
+                                    setEditSessionDate(e.target.value)
+                                  }
+                                  className="h-10 w-full rounded-xl border border-stone-200 bg-white px-2.5 text-xs text-[#241000] outline-none focus:border-orange-500"
+                                />
+                              )}
+                            </div>
+
+                            <div>
+                              <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
+                                Hall / Room *
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                list="existing-halls-list"
+                                value={editHall}
+                                onChange={(e) => setEditHall(e.target.value)}
+                                className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs font-bold text-[#241000] outline-none focus:border-orange-500"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
+                                Speaker
+                              </label>
+                              <input
+                                type="text"
+                                value={editSpeaker}
+                                onChange={(e) => setEditSpeaker(e.target.value)}
+                                placeholder="Optional"
+                                className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs text-[#241000] outline-none focus:border-orange-500"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div>
+                              <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
+                                Start Time *
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                value={editStartTime}
+                                onChange={(e) =>
+                                  setEditStartTime(e.target.value)
+                                }
+                                className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs text-[#241000] outline-none focus:border-orange-500"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
+                                End Time *
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                value={editEndTime}
+                                onChange={(e) => setEditEndTime(e.target.value)}
+                                className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs text-[#241000] outline-none focus:border-orange-500"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="mb-1 block text-[11px] font-bold uppercase text-stone-600">
+                              Topic Notes
+                            </label>
+                            <textarea
+                              rows={2}
+                              value={editDescription}
+                              onChange={(e) =>
+                                setEditDescription(e.target.value)
+                              }
+                              className="w-full rounded-xl border border-stone-200 bg-white p-2.5 text-xs text-[#241000] outline-none focus:border-orange-500"
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-end gap-2 pt-2">
+                            <button
+                              type="button"
+                              onClick={cancelEditingSession}
+                              disabled={savingEdit}
+                              className="rounded-xl border border-stone-200 bg-white px-4 py-2 text-xs font-bold text-stone-600 hover:bg-stone-50"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              disabled={savingEdit}
+                              onClick={() =>
+                                handleSaveSessionEdit(sessionItem.id)
+                              }
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-orange-700 disabled:opacity-60"
+                            >
+                              <Check size={14} />
+                              {savingEdit ? "Saving..." : "Save Changes"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={sessionItem.id}
+                      className="flex flex-col justify-between rounded-2xl border border-orange-100 bg-[#fffaf5]/60 p-5 transition hover:border-orange-200 hover:bg-white"
+                    >
+                      <div>
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center gap-1 rounded-lg bg-[#241000] px-2.5 py-1 text-xs font-bold text-orange-200">
+                              <Building2 size={12} />
+                              {sessionItem.hall}
+                            </span>
+
+                            <span className="inline-flex items-center gap-1 rounded-lg bg-orange-100/80 px-2.5 py-1 text-xs font-bold text-orange-800">
+                              <Clock size={12} />
+                              {sessionItem.startTime} – {sessionItem.endTime}
+                            </span>
+
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                                sessionItem.isActive
+                                  ? "bg-emerald-50 text-emerald-700"
+                                  : "bg-stone-200/70 text-stone-600"
+                              }`}
+                            >
+                              {sessionItem.isActive ? "Active" : "Completed"}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => startEditingSession(sessionItem)}
+                              title="Edit Session Details"
+                              className="inline-flex items-center gap-1 rounded-xl border border-orange-200 bg-white px-2.5 py-1.5 text-xs font-bold text-orange-700 transition hover:bg-orange-50"
+                            >
+                              <Pencil size={12} />
+                              Edit
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleToggleSessionActive(sessionItem)
+                              }
+                              className="rounded-xl border border-stone-200 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-700 transition hover:border-orange-300 hover:text-orange-700"
+                            >
+                              {sessionItem.isActive
+                                ? "Mark Completed"
+                                : "Reopen"}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSession(sessionItem)}
+                              aria-label={`Delete ${sessionItem.title}`}
+                              className="flex h-8 w-8 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <h4 className="mt-3 text-base font-extrabold text-[#241000]">
+                          {sessionItem.title}
+                        </h4>
+
+                        {sessionItem.speaker && (
+                          <p className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-stone-500">
+                            <Mic2 size={13} className="text-orange-500" />
+                            {sessionItem.speaker}
+                          </p>
+                        )}
+
+                        {sessionItem.description && (
+                          <p className="mt-1.5 text-xs leading-5 text-stone-500">
+                            {sessionItem.description}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-orange-100/80 pt-3.5">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-stone-600">
+                          <CircleHelp size={14} className="text-orange-600" />
+                          {qCount} {qCount === 1 ? "Question" : "Questions"}
+                        </span>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleCopyUrl(
+                                `ask-${sessionItem.id}`,
+                                `/ask/${sessionItem.id}`
+                              )
+                            }
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-1.5 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100"
+                          >
+                            <Link2 size={13} />
+                            {copiedKey === `ask-${sessionItem.id}`
+                              ? "Ask Link Copied!"
+                              : "Copy Ask Link"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleCopyUrl(
+                                `display-${sessionItem.id}`,
+                                `/display/${sessionItem.id}`
+                              )
+                            }
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-orange-200 bg-white px-3 py-1.5 text-xs font-bold text-orange-700 transition hover:bg-orange-50"
+                          >
+                            <Copy size={13} />
+                            {copiedKey === `display-${sessionItem.id}`
+                              ? "Screen URL Copied!"
+                              : "Copy Screen URL"}
+                          </button>
+
+                          <Link
+                            href={`/display/${sessionItem.id}`}
+                            target="_blank"
+                            className="inline-flex items-center gap-1.5 rounded-xl bg-[#241000] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-orange-600"
+                          >
+                            <ExternalLink size={13} />
+                            Public Screen
+                          </Link>
+
+                          <a
+                            href={`/api/admin/sessions/${sessionItem.id}/export`}
+                            className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm shadow-orange-600/20 transition hover:bg-orange-700"
+                          >
+                            <Download size={13} />
+                            Download Excel
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
       </section>
