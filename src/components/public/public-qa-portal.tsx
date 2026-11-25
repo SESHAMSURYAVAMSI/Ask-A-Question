@@ -142,7 +142,7 @@ export default function PublicQaPortal({ session }: PublicQaPortalProps) {
 
   return (
     <main className="min-h-screen bg-[#fffaf5] text-[#241000]">
-      <header className="sticky top-0 z-30 border-b border-orange-100 bg-white/90 backdrop-blur-xl">
+      {/* <header className="sticky top-0 z-30 border-b border-orange-100 bg-white/90 backdrop-blur-xl">
         <div className="mx-auto flex h-[74px] max-w-3xl items-center justify-between px-5 sm:px-8">
           <Link href="/" className="flex items-center gap-3">
             <div className="orange-gradient flex h-10 w-10 items-center justify-center rounded-2xl text-white shadow-md shadow-orange-600/20">
@@ -156,17 +156,9 @@ export default function PublicQaPortal({ session }: PublicQaPortalProps) {
                 No login required
               </p>
             </div>
-          </Link>
 
-          {/* <Link
-            href="/"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-4 py-2 text-xs font-bold text-stone-700 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
-          >
-            <ArrowLeft size={14} />
-            Home
-          </Link> */}
         </div>
-      </header>
+      </header> */}
 
       <div className="mx-auto max-w-3xl px-5 py-8 sm:px-8 sm:py-12">
         {!session ? (
