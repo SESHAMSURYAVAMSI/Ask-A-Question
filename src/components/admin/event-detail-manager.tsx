@@ -22,6 +22,7 @@ import {
   Link2,
   MapPin,
   Mic2,
+  MonitorPlay,
   Pencil,
   Plus,
   Radio,
@@ -683,7 +684,7 @@ export default function EventDetailManager({
         </Link>
       </div>
 
-      {/* Event Banner (with inline Edit Event mode) */}
+      {/* Event Banner (with inline Edit Event mode + Stage Display Launcher Link) */}
       <motion.section
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
@@ -843,6 +844,15 @@ export default function EventDetailManager({
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
+              <Link
+                href={`/display?eventId=${eventData.id}`}
+                target="_blank"
+                className="inline-flex items-center gap-2 rounded-xl bg-[#241000] px-4 py-3 text-sm font-bold text-white transition hover:bg-orange-600"
+              >
+                <MonitorPlay size={15} />
+                Stage Display
+              </Link>
+
               <button
                 type="button"
                 onClick={startEditingEvent}
@@ -1333,27 +1343,27 @@ export default function EventDetailManager({
         </div>
       </section>
 
-      {/* Full-Width Bottom Section: Schedule by Day & Hall (Chronological Time Order) */}
+      {/* Full-Width Bottom Section: Date -> Hall -> Single-Row Chronological Sessions */}
       <section className="rounded-3xl border border-orange-100 bg-white p-6 shadow-sm sm:p-8">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-2 border-b border-orange-100 pb-5">
           <div>
             <h3 className="text-xl font-extrabold text-[#241000]">
-              Schedule by Day &amp; Hall ({sessions.length} Total)
+              Schedule by Date &amp; Hall ({sessions.length} Total)
             </h3>
             <p className="mt-1 text-sm text-stone-500">
-              Select a Day, then click a Hall to view its sessions sorted in
-              chronological time order.
+              Step 1: Select Date · Step 2: Select Hall · Step 3: View or open
+              sessions in chronological order.
             </p>
           </div>
         </div>
 
-        {/* Step 1: Day Selector Pills (Day 1, Day 2, Day 3...) */}
+        {/* Step 1: Select Date */}
         {eventDays.length > 0 && (
           <div className="mb-6">
-            <p className="mb-2.5 text-[11px] font-bold uppercase tracking-wider text-stone-400">
-              1. Choose Day
+            <p className="mb-2.5 text-xs font-extrabold uppercase tracking-wider text-orange-600">
+              Step 1 · Select Date
             </p>
-            <div className="flex flex-wrap gap-2.5">
+            <div className="flex flex-wrap gap-3">
               {eventDays.map((day) => {
                 const countOnDay = sessions.filter(
                   (s) => toYMD(s.sessionDate) === day.dateStr
@@ -1368,25 +1378,25 @@ export default function EventDetailManager({
                       setActiveDayDate(day.dateStr);
                       setSessionDate(day.dateStr);
                     }}
-                    className={`flex items-center gap-2.5 rounded-2xl border px-4 py-2.5 text-left transition ${
+                    className={`flex items-center gap-3 rounded-2xl border px-5 py-3 text-left transition ${
                       isSelected
                         ? "border-orange-600 bg-orange-600 text-white shadow-md shadow-orange-600/20"
-                        : "border-orange-100 bg-[#fffaf5] text-[#241000] hover:border-orange-300"
+                        : "border-orange-100 bg-[#fffaf5] text-[#241000] hover:border-orange-300 hover:bg-orange-50/60"
                     }`}
                   >
                     <CalendarDays
-                      size={15}
+                      size={17}
                       className={
                         isSelected ? "text-orange-100" : "text-orange-600"
                       }
                     />
                     <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-extrabold">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-extrabold">
                           {day.dayLabel}
                         </span>
                         <span
-                          className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
                             isSelected
                               ? "bg-white/20 text-white"
                               : "bg-orange-100 text-orange-800"
@@ -1396,7 +1406,7 @@ export default function EventDetailManager({
                         </span>
                       </div>
                       <p
-                        className={`text-[10px] ${
+                        className={`mt-0.5 text-xs ${
                           isSelected ? "text-orange-100" : "text-stone-500"
                         }`}
                       >
@@ -1410,7 +1420,7 @@ export default function EventDetailManager({
           </div>
         )}
 
-        {/* Step 2: Halls inside the selected Day */}
+        {/* Step 2: Select Hall */}
         {sessionsForActiveDay.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-orange-200 bg-[#fffaf5] px-6 py-14 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-100 text-orange-600">
@@ -1430,10 +1440,13 @@ export default function EventDetailManager({
         ) : (
           <div className="space-y-6">
             <div>
-              <p className="mb-2.5 text-[11px] font-bold uppercase tracking-wider text-stone-400">
-                2. Choose Hall on {activeDayObj?.dayLabel || activeDayDate}
+              <p className="mb-2.5 text-xs font-extrabold uppercase tracking-wider text-orange-600">
+                Step 2 · Select Hall{" "}
+                {activeDayObj
+                  ? `(${activeDayObj.dayLabel} — ${activeDayObj.formattedDate})`
+                  : ""}
               </p>
-              <div className="flex flex-wrap gap-2.5">
+              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
                 {hallsForActiveDay.map((hallName) => {
                   const hallSessionCount = sessionsForActiveDay.filter(
                     (s) => s.hall === hallName
@@ -1445,44 +1458,57 @@ export default function EventDetailManager({
                       key={hallName}
                       type="button"
                       onClick={() => setActiveHallName(hallName)}
-                      className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-bold transition ${
+                      className={`flex items-center justify-between rounded-2xl border p-4 text-left transition ${
                         isHallSelected
-                          ? "border-[#241000] bg-[#241000] text-white shadow-sm"
-                          : "border-stone-200 bg-stone-50 text-[#241000] hover:border-orange-300 hover:bg-orange-50"
+                          ? "border-[#241000] bg-[#241000] text-white shadow-md"
+                          : "border-stone-200 bg-[#fffaf5]/70 text-[#241000] hover:border-orange-300 hover:bg-orange-50/70"
                       }`}
                     >
-                      <Building2
-                        size={14}
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+                            isHallSelected
+                              ? "bg-white/10 text-orange-300"
+                              : "bg-orange-100 text-orange-600"
+                          }`}
+                        >
+                          <Building2 size={18} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-extrabold">{hallName}</p>
+                          <p
+                            className={`text-xs ${
+                              isHallSelected
+                                ? "text-orange-200/80"
+                                : "text-stone-500"
+                            }`}
+                          >
+                            {hallSessionCount}{" "}
+                            {hallSessionCount === 1 ? "Session" : "Sessions"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <ChevronRight
+                        size={16}
                         className={
-                          isHallSelected ? "text-orange-300" : "text-orange-600"
+                          isHallSelected ? "text-orange-300" : "text-stone-400"
                         }
                       />
-                      <span>{hallName}</span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] ${
-                          isHallSelected
-                            ? "bg-white/15 text-orange-200"
-                            : "bg-white text-stone-600"
-                        }`}
-                      >
-                        {hallSessionCount}{" "}
-                        {hallSessionCount === 1 ? "session" : "sessions"}
-                      </span>
-                      <ChevronRight size={13} className="opacity-60" />
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            {/* Step 3: Sessions inside the selected Day & Hall (Sorted by Time) */}
+            {/* Step 3: Single-Row Chronological Sessions inside the selected Date & Hall */}
             <div>
-              <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-stone-400">
-                3. Sessions in {effectiveActiveHall} — Ordered by Time (
+              <p className="mb-3 text-xs font-extrabold uppercase tracking-wider text-orange-600">
+                Step 3 · Sessions in {effectiveActiveHall} (
                 {sessionsForActiveDayAndHall.length})
               </p>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-3.5">
                 {sessionsForActiveDayAndHall.map((sessionItem) => {
                   const qCount =
                     questionCountBySession.get(sessionItem.id) ?? 0;
@@ -1574,7 +1600,9 @@ export default function EventDetailManager({
                               <input
                                 type="text"
                                 value={editSpeaker}
-                                onChange={(e) => setEditSpeaker(e.target.value)}
+                                onChange={(e) =>
+                                  setEditSpeaker(e.target.value)
+                                }
                                 placeholder="Optional"
                                 className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs text-[#241000] outline-none focus:border-orange-500"
                               />
@@ -1605,7 +1633,9 @@ export default function EventDetailManager({
                                 type="text"
                                 required
                                 value={editEndTime}
-                                onChange={(e) => setEditEndTime(e.target.value)}
+                                onChange={(e) =>
+                                  setEditEndTime(e.target.value)
+                                }
                                 className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs text-[#241000] outline-none focus:border-orange-500"
                               />
                             </div>
@@ -1654,10 +1684,10 @@ export default function EventDetailManager({
                   return (
                     <div
                       key={sessionItem.id}
-                      className="flex flex-col justify-between rounded-2xl border border-orange-100 bg-[#fffaf5]/60 p-5 transition hover:border-orange-200 hover:bg-white"
+                      className="rounded-2xl border border-orange-100 bg-[#fffaf5]/60 p-5 transition hover:border-orange-300 hover:bg-white hover:shadow-sm"
                     >
-                      <div>
-                        <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+                        <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="inline-flex items-center gap-1 rounded-lg bg-[#241000] px-2.5 py-1 text-xs font-bold text-orange-200">
                               <Building2 size={12} />
@@ -1678,67 +1708,45 @@ export default function EventDetailManager({
                             >
                               {sessionItem.isActive ? "Active" : "Completed"}
                             </span>
+
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-stone-600">
+                              <CircleHelp
+                                size={13}
+                                className="text-orange-600"
+                              />
+                              {qCount} {qCount === 1 ? "Question" : "Questions"}
+                            </span>
                           </div>
 
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => startEditingSession(sessionItem)}
-                              title="Edit Session Details"
-                              className="inline-flex items-center gap-1 rounded-xl border border-orange-200 bg-white px-2.5 py-1.5 text-xs font-bold text-orange-700 transition hover:bg-orange-50"
-                            >
-                              <Pencil size={12} />
-                              Edit
-                            </button>
+                          <h4 className="mt-2.5 text-base font-extrabold text-[#241000] sm:text-lg">
+                            {sessionItem.title}
+                          </h4>
 
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleToggleSessionActive(sessionItem)
-                              }
-                              className="rounded-xl border border-stone-200 bg-white px-2.5 py-1.5 text-xs font-bold text-stone-700 transition hover:border-orange-300 hover:text-orange-700"
-                            >
-                              {sessionItem.isActive
-                                ? "Mark Completed"
-                                : "Reopen"}
-                            </button>
+                          {sessionItem.speaker && (
+                            <p className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-stone-500">
+                              <Mic2 size={13} className="text-orange-500" />
+                              {sessionItem.speaker}
+                            </p>
+                          )}
 
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteSession(sessionItem)}
-                              aria-label={`Delete ${sessionItem.title}`}
-                              className="flex h-8 w-8 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
+                          {sessionItem.description && (
+                            <p className="mt-1.5 text-xs leading-5 text-stone-500">
+                              {sessionItem.description}
+                            </p>
+                          )}
                         </div>
 
-                        <h4 className="mt-3 text-base font-extrabold text-[#241000]">
-                          {sessionItem.title}
-                        </h4>
-
-                        {sessionItem.speaker && (
-                          <p className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-stone-500">
-                            <Mic2 size={13} className="text-orange-500" />
-                            {sessionItem.speaker}
-                          </p>
-                        )}
-
-                        {sessionItem.description && (
-                          <p className="mt-1.5 text-xs leading-5 text-stone-500">
-                            {sessionItem.description}
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-orange-100/80 pt-3.5">
-                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-stone-600">
-                          <CircleHelp size={14} className="text-orange-600" />
-                          {qCount} {qCount === 1 ? "Question" : "Questions"}
-                        </span>
-
                         <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => startEditingSession(sessionItem)}
+                            title="Edit Session Details"
+                            className="inline-flex items-center gap-1 rounded-xl border border-orange-200 bg-white px-3 py-2 text-xs font-bold text-orange-700 transition hover:bg-orange-50"
+                          >
+                            <Pencil size={12} />
+                            Edit
+                          </button>
+
                           <button
                             type="button"
                             onClick={() =>
@@ -1747,7 +1755,7 @@ export default function EventDetailManager({
                                 `/ask/${sessionItem.id}`
                               )
                             }
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-1.5 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100"
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100"
                           >
                             <Link2 size={13} />
                             {copiedKey === `ask-${sessionItem.id}`
@@ -1763,7 +1771,7 @@ export default function EventDetailManager({
                                 `/display/${sessionItem.id}`
                               )
                             }
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-orange-200 bg-white px-3 py-1.5 text-xs font-bold text-orange-700 transition hover:bg-orange-50"
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-orange-200 bg-white px-3 py-2 text-xs font-bold text-orange-700 transition hover:bg-orange-50"
                           >
                             <Copy size={13} />
                             {copiedKey === `display-${sessionItem.id}`
@@ -1774,7 +1782,7 @@ export default function EventDetailManager({
                           <Link
                             href={`/display/${sessionItem.id}`}
                             target="_blank"
-                            className="inline-flex items-center gap-1.5 rounded-xl bg-[#241000] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-orange-600"
+                            className="inline-flex items-center gap-1.5 rounded-xl bg-[#241000] px-3 py-2 text-xs font-bold text-white transition hover:bg-orange-600"
                           >
                             <ExternalLink size={13} />
                             Public Screen
@@ -1782,11 +1790,30 @@ export default function EventDetailManager({
 
                           <a
                             href={`/api/admin/sessions/${sessionItem.id}/export`}
-                            className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm shadow-orange-600/20 transition hover:bg-orange-700"
+                            className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-3 py-2 text-xs font-bold text-white shadow-sm shadow-orange-600/20 transition hover:bg-orange-700"
                           >
                             <Download size={13} />
                             Download Excel
                           </a>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleToggleSessionActive(sessionItem)
+                            }
+                            className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-bold text-stone-700 transition hover:border-orange-300 hover:text-orange-700"
+                          >
+                            {sessionItem.isActive ? "Mark Completed" : "Reopen"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSession(sessionItem)}
+                            aria-label={`Delete ${sessionItem.title}`}
+                            className="flex h-8 w-8 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
                       </div>
                     </div>

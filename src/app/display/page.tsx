@@ -8,6 +8,8 @@ import DisplaySelectorPortal, {
   PublicDisplaySession,
 } from "@/components/public/display-selector-portal";
 
+export const instant = false;
+
 interface DisplayDirectoryPageProps {
   searchParams: Promise<{ eventId?: string }>;
 }
