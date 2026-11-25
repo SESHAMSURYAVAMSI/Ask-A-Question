@@ -1,17 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
-  ArrowLeft,
   Building2,
   CheckCircle2,
   CircleHelp,
   Clock,
   MapPin,
-  MessageCircle,
-  MessageSquareText,
   Mic2,
   Radio,
   RefreshCw,
@@ -19,6 +15,7 @@ import {
   Sparkles,
   Star,
   User,
+  X,
 } from "lucide-react";
 
 export interface PublicSessionInfo {
@@ -53,6 +50,7 @@ interface PublicQaPortalProps {
 
 function formatTime(iso: string) {
   return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(iso));
@@ -66,10 +64,8 @@ export default function PublicQaPortal({ session }: PublicQaPortalProps) {
   const [participantName, setParticipantName] = useState("");
   const [questionText, setQuestionText] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [feedback, setFeedback] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   const fetchSessionQuestions = useCallback(async () => {
     if (!session?.id) return;
@@ -96,12 +92,21 @@ export default function PublicQaPortal({ session }: PublicQaPortalProps) {
     return () => clearInterval(interval);
   }, [session?.id, fetchSessionQuestions]);
 
+  // Auto-close success popup after 4 seconds
+  useEffect(() => {
+    if (!showSuccessModal) return;
+    const timer = setTimeout(() => {
+      setShowSuccessModal(false);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [showSuccessModal]);
+
   async function handleSubmitQuestion(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!session?.id) return;
 
     setSubmitting(true);
-    setFeedback(null);
+    setErrorMessage(null);
 
     try {
       const res = await fetch("/api/public/questions", {
@@ -117,24 +122,15 @@ export default function PublicQaPortal({ session }: PublicQaPortalProps) {
       const data = await res.json();
 
       if (!res.ok) {
-        setFeedback({
-          type: "error",
-          text: data.message || "Unable to submit your question.",
-        });
+        setErrorMessage(data.message || "Unable to submit your question.");
         return;
       }
 
       setQuestionText("");
-      setFeedback({
-        type: "success",
-        text: `Your question has been sent to ${session.hall}!`,
-      });
       setQuestions((prev) => [data.question, ...prev]);
+      setShowSuccessModal(true);
     } catch {
-      setFeedback({
-        type: "error",
-        text: "Network error. Please try again.",
-      });
+      setErrorMessage("Network error. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -142,23 +138,63 @@ export default function PublicQaPortal({ session }: PublicQaPortalProps) {
 
   return (
     <main className="min-h-screen bg-[#fffaf5] text-[#241000]">
-      {/* <header className="sticky top-0 z-30 border-b border-orange-100 bg-white/90 backdrop-blur-xl">
-        <div className="mx-auto flex h-[74px] max-w-3xl items-center justify-between px-5 sm:px-8">
-          <Link href="/" className="flex items-center gap-3">
-            <div className="orange-gradient flex h-10 w-10 items-center justify-center rounded-2xl text-white shadow-md shadow-orange-600/20">
-              <MessageCircle size={20} strokeWidth={2.4} />
-            </div>
-            <div>
-              <p className="text-base font-extrabold tracking-tight">
-                Ask A Question
-              </p>
-              <p className="text-[11px] text-stone-500">
-                No login required
-              </p>
-            </div>
+      {/* Professional Centered Success Popup Modal */}
+      <AnimatePresence>
+        {showSuccessModal && session && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowSuccessModal(false)}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-5 backdrop-blur-xs"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: 14 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 14 }}
+              transition={{ type: "spring", stiffness: 360, damping: 26 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-sm rounded-3xl border border-emerald-100 bg-white p-7 text-center shadow-2xl"
+            >
+              <button
+                type="button"
+                onClick={() => setShowSuccessModal(false)}
+                aria-label="Close popup"
+                className="absolute right-4 top-4 rounded-xl p-1.5 text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
+              >
+                <X size={18} />
+              </button>
 
-        </div>
-      </header> */}
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 ring-8 ring-emerald-50/60">
+                <CheckCircle2 size={34} strokeWidth={2.3} />
+              </div>
+
+              <h3 className="mt-5 text-xl font-extrabold tracking-tight text-[#241000]">
+                Submitted Successfully!
+              </h3>
+
+              <p className="mt-2 text-sm leading-6 text-stone-500">
+                Your question has been sent directly to{" "}
+                <strong className="text-[#241000]">{session.hall}</strong> for{" "}
+                <span className="font-semibold text-orange-700">
+                  {session.title}
+                </span>
+                .
+              </p>
+
+              <div className="mt-6 flex flex-col gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowSuccessModal(false)}
+                  className="h-11 w-full rounded-xl bg-orange-600 px-5 text-sm font-bold text-white shadow-md shadow-orange-600/20 transition hover:bg-orange-700"
+                >
+                  Ask Another Question
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="mx-auto max-w-3xl px-5 py-8 sm:px-8 sm:py-12">
         {!session ? (
@@ -223,7 +259,7 @@ export default function PublicQaPortal({ session }: PublicQaPortalProps) {
               </div>
             </motion.section>
 
-            {/* Separate Tabs: Ask a Question vs Asked Questions */}
+            {/* Tab Header */}
             <div className="flex items-center gap-2 rounded-2xl border border-orange-100 bg-white p-1.5 shadow-sm">
               <button
                 type="button"
@@ -237,25 +273,9 @@ export default function PublicQaPortal({ session }: PublicQaPortalProps) {
                 <Sparkles size={16} />
                 Ask a Question
               </button>
-
-              {/* <button
-                type="button"
-                onClick={() => {
-                  setActiveTab("asked");
-                  fetchSessionQuestions();
-                }}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold transition ${
-                  activeTab === "asked"
-                    ? "bg-[#241000] text-white shadow-sm"
-                    : "text-stone-600 hover:bg-orange-50 hover:text-orange-700"
-                }`}
-              >
-                <MessageSquareText size={16} />
-                Asked Questions ({questions.length})
-              </button> */}
             </div>
 
-            {/* Tab 1: Clean Question Submission Form Only */}
+            {/* Tab 1: Clean Question Submission Form */}
             {activeTab === "ask" ? (
               <motion.section
                 key="ask-form"
@@ -277,15 +297,7 @@ export default function PublicQaPortal({ session }: PublicQaPortalProps) {
                 {!session.isActive ? (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
                     This session has ended and is no longer accepting new
-                    questions. You can still switch to the{" "}
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("asked")}
-                      className="font-bold underline"
-                    >
-                      Asked Questions
-                    </button>{" "}
-                    tab to view submitted questions.
+                    questions.
                   </div>
                 ) : (
                   <form onSubmit={handleSubmitQuestion} className="space-y-5">
@@ -294,7 +306,7 @@ export default function PublicQaPortal({ session }: PublicQaPortalProps) {
                         htmlFor="participantName"
                         className="mb-2 block text-xs font-bold uppercase tracking-wide text-stone-600"
                       >
-                        Your Name 
+                        Your Name
                       </label>
                       <div className="relative">
                         <User
@@ -334,25 +346,12 @@ export default function PublicQaPortal({ session }: PublicQaPortalProps) {
                       </div>
                     </div>
 
-                    {feedback && (
+                    {errorMessage && (
                       <div
                         role="alert"
-                        className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-4 py-3.5 text-xs font-semibold ${
-                          feedback.type === "success"
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                            : "border-red-100 bg-red-50 text-red-600"
-                        }`}
+                        className="rounded-xl border border-red-100 bg-red-50 px-4 py-3.5 text-xs font-semibold text-red-600"
                       >
-                        <span>{feedback.text}</span>
-                        {feedback.type === "success" && (
-                          <button
-                            type="button"
-                            onClick={() => setActiveTab("asked")}
-                            className="font-bold text-emerald-900 underline"
-                          >
-                            View Asked Questions →
-                          </button>
-                        )}
+                        {errorMessage}
                       </div>
                     )}
 
