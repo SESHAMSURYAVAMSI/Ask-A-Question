@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  ArrowLeft,
   Building2,
   CheckCircle2,
   CircleHelp,
@@ -203,12 +205,18 @@ export default function PublicQaPortal({ session }: PublicQaPortalProps) {
               <Radio size={26} />
             </div>
             <h1 className="mt-5 text-2xl font-extrabold text-[#241000]">
-              No Active Session Right Now
+              Session Not Found
             </h1>
             <p className="mt-2 text-sm leading-6 text-stone-500">
-              There is currently no live session open for questions. Please scan
-              your hall&apos;s QR link or check back once the session begins.
+              This session may no longer be active. Choose another active
+              session from the directory below.
             </p>
+            <Link
+              href="/ask"
+              className="mt-5 inline-flex items-center gap-2 rounded-xl bg-orange-600 px-5 py-2.5 text-xs font-bold text-white"
+            >
+              Select Date, Hall &amp; Session
+            </Link>
           </div>
         ) : (
           <div className="space-y-6">
@@ -218,21 +226,31 @@ export default function PublicQaPortal({ session }: PublicQaPortalProps) {
               animate={{ opacity: 1, y: 0 }}
               className="rounded-3xl bg-gradient-to-br from-[#241000] via-[#351804] to-[#4a2208] p-6 text-white shadow-xl shadow-orange-950/10 sm:p-8"
             >
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-orange-600 px-3.5 py-1 text-xs font-extrabold uppercase tracking-wide text-white">
-                  <Building2 size={13} />
-                  {session.hall}
-                </span>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-orange-600 px-3.5 py-1 text-xs font-extrabold uppercase tracking-wide text-white">
+                    <Building2 size={13} />
+                    {session.hall}
+                  </span>
 
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold text-orange-200">
-                  <Clock size={13} />
-                  {session.startTime} – {session.endTime}
-                </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold text-orange-200">
+                    <Clock size={13} />
+                    {session.startTime} – {session.endTime}
+                  </span>
 
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-300">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-                  Live
-                </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-300">
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+                    Live
+                  </span>
+                </div>
+
+                {/* <Link
+                  href={`/ask?eventId=${session.eventId}`}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3.5 py-1 text-xs font-bold text-orange-100 transition hover:bg-white/20"
+                >
+                  <ArrowLeft size={13} />
+                  Change Session
+                </Link> */}
               </div>
 
               <p className="mt-4 text-xs font-bold uppercase tracking-[0.14em] text-orange-300/80">

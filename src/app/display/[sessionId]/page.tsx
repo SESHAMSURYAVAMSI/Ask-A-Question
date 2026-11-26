@@ -1,22 +1,22 @@
 import { notFound } from "next/navigation";
 import mongoose from "mongoose";
+import { connection } from "next/server";
 
 import { connectDB } from "@/lib/mongodb";
 import Event from "@/models/Event";
 import Session from "@/models/Session";
 import Question from "@/models/Question";
-import LiveScreenDisplay, {
-  DisplayQuestionItem,
-  DisplaySessionInfo,
-} from "@/components/public/live-screen-display";
+import LiveScreenDisplay from "@/components/public/live-screen-display";
 
 export const instant = false;
 
-interface PageProps {
+interface DisplayPageProps {
   params: Promise<{ sessionId: string }>;
 }
 
-export default async function SessionDisplayPage({ params }: PageProps) {
+export default async function DisplayScreenPage({ params }: DisplayPageProps) {
+  await connection();
+
   const { sessionId } = await params;
 
   if (!mongoose.Types.ObjectId.isValid(sessionId)) {
@@ -33,6 +33,7 @@ export default async function SessionDisplayPage({ params }: PageProps) {
     speaker?: string;
     startTime: string;
     endTime: string;
+    description?: string;
     isActive: boolean;
   } | null>();
 
@@ -41,11 +42,9 @@ export default async function SessionDisplayPage({ params }: PageProps) {
   }
 
   const [eventDoc, questionDocs] = await Promise.all([
-    Event.findById(sessionDoc.eventId)
-      .select("title")
-      .lean<{ title: string } | null>(),
+    Event.findById(sessionDoc.eventId).lean<{ title: string } | null>(),
     Question.find({ sessionId })
-      .sort({ isFeatured: -1, createdAt: -1 })
+      .sort({ isFeatured: -1, createdAt: 1 })
       .lean<
         Array<{
           _id: unknown;
@@ -58,30 +57,27 @@ export default async function SessionDisplayPage({ params }: PageProps) {
       >(),
   ]);
 
-  const sessionInfo: DisplaySessionInfo = {
-    id: String(sessionDoc._id),
-    eventTitle: eventDoc?.title || "Live Event",
-    title: sessionDoc.title,
-    hall: sessionDoc.hall,
-    speaker: sessionDoc.speaker || "",
-    startTime: sessionDoc.startTime,
-    endTime: sessionDoc.endTime,
-    isActive: sessionDoc.isActive,
-  };
-
-  const initialQuestions: DisplayQuestionItem[] = questionDocs.map((q) => ({
-    id: String(q._id),
-    participantName: q.participantName || "Anonymous",
-    questionText: q.questionText,
-    isAnswered: Boolean(q.isAnswered),
-    isFeatured: Boolean(q.isFeatured),
-    createdAt: new Date(q.createdAt).toISOString(),
-  }));
-
   return (
     <LiveScreenDisplay
-      session={sessionInfo}
-      initialQuestions={initialQuestions}
+      session={{
+        id: String(sessionDoc._id),
+        eventTitle: eventDoc?.title || "Live Event",
+        title: sessionDoc.title,
+        hall: sessionDoc.hall,
+        speaker: sessionDoc.speaker || "",
+        startTime: sessionDoc.startTime,
+        endTime: sessionDoc.endTime,
+        description: sessionDoc.description || "",
+        isActive: sessionDoc.isActive,
+      }}
+      initialQuestions={questionDocs.map((q) => ({
+        id: String(q._id),
+        participantName: q.participantName || "Anonymous",
+        questionText: q.questionText,
+        isAnswered: q.isAnswered,
+        isFeatured: q.isFeatured,
+        createdAt: new Date(q.createdAt).toISOString(),
+      }))}
     />
   );
 }

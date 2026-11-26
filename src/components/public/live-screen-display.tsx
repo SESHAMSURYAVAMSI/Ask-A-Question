@@ -9,6 +9,7 @@ import {
   Building2,
   CheckCircle2,
   Clock,
+  FileText,
   History,
   Maximize2,
   MessageCircle,
@@ -27,6 +28,7 @@ export interface DisplaySessionInfo {
   speaker: string;
   startTime: string;
   endTime: string;
+  description?: string;
   isActive: boolean;
 }
 
@@ -153,7 +155,7 @@ export default function LiveScreenDisplay({
                 className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3.5 py-1 text-xs font-bold text-stone-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
               >
                 <ArrowLeft size={13} />
-                Back
+                Back to Display
               </Link>
 
               <span className="inline-flex items-center gap-1.5 rounded-full bg-[#241000] px-3.5 py-1 text-xs font-extrabold uppercase tracking-wider text-orange-200">
@@ -219,7 +221,7 @@ export default function LiveScreenDisplay({
             </div>
           </div>
 
-          {/* Row 2: Event & Session Title + Speaker */}
+          {/* Row 2: Event, Session Title, Speaker & Topic Notes */}
           <div className="mt-4 border-t border-orange-100/70 pt-4">
             <p className="text-xs font-bold uppercase tracking-[0.15em] text-orange-600">
               {session.eventTitle}
@@ -227,10 +229,21 @@ export default function LiveScreenDisplay({
             <h1 className="mt-1 text-xl font-black leading-snug tracking-tight text-[#241000] sm:text-3xl">
               {session.title}
             </h1>
+
             {session.speaker && (
-              <p className="mt-1.5 inline-flex items-center gap-1.5 text-sm font-medium text-stone-600">
-                <Mic2 size={14} className="text-orange-600" />
+              <p className="mt-1.5 inline-flex items-center gap-1.5 text-sm font-semibold text-stone-700">
+                <Mic2 size={14} className="shrink-0 text-orange-600" />
                 {session.speaker}
+              </p>
+            )}
+
+            {session.description && (
+              <p className="mt-2 flex items-start gap-1.5 max-w-4xl text-xs leading-relaxed text-stone-500 sm:text-sm">
+                <FileText
+                  size={14}
+                  className="mt-0.5 shrink-0 text-orange-500"
+                />
+                <span>{session.description}</span>
               </p>
             )}
           </div>

@@ -21,6 +21,7 @@ import {
   Layers,
   Link2,
   MapPin,
+  MessageCircle,
   Mic2,
   MonitorPlay,
   Pencil,
@@ -684,7 +685,7 @@ export default function EventDetailManager({
         </Link>
       </div>
 
-      {/* Event Banner (with inline Edit Event mode + Stage Display Launcher Link) */}
+      {/* Event Banner (with inline Edit Event mode + Ask Portal & Stage Display Launchers) */}
       <motion.section
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
@@ -844,6 +845,31 @@ export default function EventDetailManager({
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
+              <Link
+                href={`/ask?eventId=${eventData.id}`}
+                target="_blank"
+                className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-3 text-sm font-bold text-white shadow-sm shadow-orange-600/20 transition hover:bg-orange-700"
+              >
+                <MessageCircle size={15} />
+                Ask Portal
+              </Link>
+
+              <button
+                type="button"
+                onClick={() =>
+                  handleCopyUrl(
+                    `event-ask-${eventData.id}`,
+                    `/ask?eventId=${eventData.id}`
+                  )
+                }
+                className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-sm font-bold text-emerald-800 transition hover:bg-emerald-100"
+              >
+                <Link2 size={15} />
+                {copiedKey === `event-ask-${eventData.id}`
+                  ? "Ask URL Copied!"
+                  : "Copy Ask Portal"}
+              </button>
+
               <Link
                 href={`/display?eventId=${eventData.id}`}
                 target="_blank"
