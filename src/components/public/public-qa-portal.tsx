@@ -334,7 +334,7 @@ export default function PublicQaPortal({ session }: PublicQaPortalProps) {
                         <input
                           id="participantName"
                           type="text"
-                          placeholder="e.g. Surya (leave blank to post anonymously)"
+                          placeholder="e.g. Dr Saranath"
                           value={participantName}
                           onChange={(e) => setParticipantName(e.target.value)}
                           className="h-12 w-full rounded-xl border border-stone-200 bg-stone-50 pl-11 pr-4 text-sm text-[#241000] outline-none transition focus:border-orange-500 focus:bg-white focus:ring-4 focus:ring-orange-500/10"
